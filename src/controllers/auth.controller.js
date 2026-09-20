@@ -24,11 +24,11 @@ export const registerUser = async (req, res) => {
         });
         const token = generateToken(newUser);
         res.cookie('token', token,
-            // {
-            //     httpOnly: true,
-            //     sameSite: 'none',
-            //     secure: true
-            // }
+            {
+                httpOnly: true,
+                sameSite: 'none',
+                secure: true
+            }
         )
         res.status(201).json(newUser);
     } catch (error) {
@@ -51,11 +51,11 @@ export const loginUser = async (req, res) => {
     }
     const token = generateToken(isUserValid);
     res.cookie('token', token,
-        // {
-        //     httpOnly: true,
-        //     sameSite: 'none',
-        //     secure: true
-        // }
+        {
+            httpOnly: true,
+            sameSite: 'none',
+            secure: true
+        }
     )
     res.status(200).json(isUserValid);
 }
