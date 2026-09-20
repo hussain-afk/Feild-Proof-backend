@@ -25,9 +25,9 @@ export const createTask = async (req, res) => {
 
         // 2. Created document par populate run karein
         const populatedTask = await newTask.populate('assignedWorker');
-
+ 
         res.status(201).json(populatedTask);
-        
+         
     } catch (error) {
         res.status(500).json({ message: 'Error creating task', error: error.message });
     }
