@@ -5,8 +5,13 @@ import cookieParser from 'cookie-parser';
 import authRoutes from './src/router/auth.route.js';
 import taskRoutes from './src/router/task.route.js';
 import verificationRoutes from './src/router/verification.route.js';
+import cors from 'cors';
 // middlewares
 const app = express();
+app.use(cors({
+  origin: envConfig.frontendUrl,
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
