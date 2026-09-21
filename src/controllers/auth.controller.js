@@ -92,7 +92,13 @@ export const logoutUser = async (req, res) => {
         if (!user) {
             return res.status(401).json({ message: 'Unauthorized' });
         }
-        res.clearCookie('token');
+        res.clearCookie("token",
+            {
+                httpOnly: true,
+                secure: true,
+                sameSite: "none",
+            }
+        );
         res.status(200).json({ message: 'Logout successful' });
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
