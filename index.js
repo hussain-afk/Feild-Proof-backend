@@ -12,9 +12,13 @@ import cors from 'cors';
 
 const app = express();
 
+// Render par PORT dynamically assign hota hai, isliye fallback (10000 / envConfig.port) rakhein
+const PORT = process.env.PORT || envConfig.port || 4000;
+const FRONTEND_URL = envConfig.frontendUrl;
+
 // Middlewares
 app.use(cors({
-  origin: envConfig.frontendUrl,
+  origin: FRONTEND_URL,
   credentials: true
 }));
 app.use(express.json());
@@ -25,33 +29,40 @@ app.use(cookieParser());
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: envConfig.frontendUrl,
-    credentials: true
-  }
+    origin: FRONTEND_URL,
+    credentials: true,
+    methods: ["GET", "POST"]
+  },
+  transports: ["polling", "websocket"] // Polling to WebSocket upgrade support for cloud hosting
 });
 
-// IMPORTANT: Controllers mein io use karne ke liye app setting set karein
+// Controllers mein io access karne ke liye setup
 app.set('io', io);
 
 // Socket.io Connection Logic
 io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
+  console.log('⚡ User connected:', socket.id);
 
   // Private room join logic
   socket.on('join_room', (userId) => {
     if (userId) {
       socket.join(userId.toString());
-      console.log(`User ${userId} joined their private room`);
+      console.log(`👤 User ${userId} joined their private room`);
     }
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+    console.log('❌ User disconnected:', socket.id);
   });
 });
 
 // Database Connection
 connectDB();
+
+// Health Check Endpoint (Render keeping-alive / monitoring ke liye best practice)
+app.get('/health', (req, res) => {
+  res.status(200).send('Server is active and healthy');
+});
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -59,7 +70,7 @@ app.use('/api/tasks', taskRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/verify', verificationRoutes);
 
-// FIXED: app.listen ki jagah server.listen use karein
-server.listen(envConfig.port, () => {
-  console.log(`Server & Socket.io running on port ${envConfig.port}`);
+// Server Listen
+server.listen(PORT, () => {
+  console.log(`Server & Socket.io running on port ${PORT}`);
 });
