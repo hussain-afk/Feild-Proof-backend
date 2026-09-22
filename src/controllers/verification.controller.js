@@ -1,10 +1,12 @@
 import Task from "../models/task.model.js";
 import Verification from "../models/verification.model.js";
+import uploadImage from "../services/uploadImage.service.js";
 
 export const checkIn = async (req, res) => {
-    const { taskId, latitude, longitude, photoUrl } = req.body;
+    const { taskId, latitude, longitude } = req.body;
+    const photoUrl = req.file
     const workerId = req.user._id || req.user.id; // Token se worker ki ID
-
+    // console.log('Check-in Request:', { taskId, latitude, longitude, photoUrl });
     try {
         // 1. Check karein ke required data aaya hai ya nahi
         if (!taskId || latitude === undefined || longitude === undefined || !photoUrl) {
@@ -20,12 +22,13 @@ export const checkIn = async (req, res) => {
         // 3. Simple Distance Check (Lat/Lon Match)
         // Production mein exact distance calculate hota hai, basic logic yeh hai:
         const isNearby = 
-            Math.abs(task.siteLocation.latitude - latitude) < 0.01 &&
-            Math.abs(task.siteLocation.longitude - longitude) < 0.01;
+            Math.abs(task.siteLocation.latitude - latitude) < 0.10 &&
+            Math.abs(task.siteLocation.longitude - longitude) < 0.10;
 
         if (!isNearby) {
             return res.status(400).json({ message: 'Check-in failed. You are not at the site location!' });
         }
+        const uploadedImageUrl = await uploadImage(photoUrl);
 
         // 4. Verification Database mein Entry Save Karein
         const newVerification = await Verification.create({
@@ -35,7 +38,7 @@ export const checkIn = async (req, res) => {
                 time: new Date(),
                 latitude,
                 longitude,
-                photoUrl
+                photoUrl: uploadedImageUrl
             },
             isVerified: true
         });
@@ -55,7 +58,8 @@ export const checkIn = async (req, res) => {
 };
 
 export const checkOut = async (req, res) => {
-    const { taskId, latitude, longitude, photoUrl } = req.body;
+    const { taskId, latitude, longitude } = req.body;
+    const photoUrl = req.file;
     const workerId = req.user._id || req.user.id;
 
     try {
@@ -81,13 +85,14 @@ export const checkOut = async (req, res) => {
         // 3. Working Hours Calculation (Milliseconds to Hours)
         const diffInMs = checkOutTime - checkInTime;
         const totalHours = Number((diffInMs / (1000 * 60 * 60)).toFixed(2)); // Round off 2 decimals
+        const uploadedImageUrl = await uploadImage(photoUrl);
 
         // 4. Update Verification Document
         verification.checkOut = {
             time: checkOutTime,
             latitude,
             longitude,
-            photoUrl
+            photoUrl: uploadedImageUrl
         };
         verification.totalHours = totalHours > 0 ? totalHours : 0.01; // Minimum basic unit
         await verification.save();

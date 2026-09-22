@@ -41,7 +41,7 @@ app.set('io', io);
 
 // Socket.io Connection Logic
 io.on('connection', (socket) => {
-  console.log('⚡ User connected:', socket.id);
+  console.log('User connected:', socket.id);
 
   // Private room join logic
   socket.on('join_room', (userId) => {
@@ -52,7 +52,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    console.log('❌ User disconnected:', socket.id);
+    console.log('User disconnected:', socket.id);
   });
 });
 

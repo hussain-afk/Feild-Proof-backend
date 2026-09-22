@@ -16,13 +16,13 @@ const verificationSchema = new mongoose.Schema(
             time: { type: Date, required: true },
             latitude: { type: Number, required: true },
             longitude: { type: Number, required: true },
-            photoUrl: { type: String, required: true }, // Live work photo URL
+            photoUrl: { type: [String], required: true }, // Live work photo URL
         },
         checkOut: {
             time: { type: Date },
             latitude: { type: Number },
             longitude: { type: Number },
-            photoUrl: { type: String },
+            photoUrl: { type: [String], required: true }, // Live work photo URL
         },
         totalHours: {
             type: Number,

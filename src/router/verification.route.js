@@ -1,10 +1,14 @@
 import express from 'express';
 import authMiddleware from '../middleware/auth.middleware.js';
 import { checkIn, checkOut } from '../controllers/verification.controller.js';
+import multer from 'multer';
 
 const router = express.Router();
+const storage = multer.memoryStorage();
 
-router.post("/check-in", authMiddleware, checkIn);
-router.post("/check-out", authMiddleware, checkOut);
+const upload = multer({ storage: storage });
+
+router.post("/check-in", authMiddleware,  upload.single('image'), checkIn);
+router.post("/check-out", authMiddleware,  upload.single('image'), checkOut);
 
 export default router;
