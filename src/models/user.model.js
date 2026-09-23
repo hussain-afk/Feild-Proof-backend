@@ -37,6 +37,24 @@ const userSchema = new mongoose.Schema(
             type: String,
             default: '', // Profile picture URL
         },
+        paymentDetails: {
+            bankName: {
+                type: String,
+                default: '',
+            },
+            accountNumber: {
+                type: String,
+                default: '',
+            },
+            accountHolderName: {
+                type: String,
+                default: '',
+            },
+            jazzcashOrEasypaisa: {
+                type: String,
+                default: '',
+            }
+        }
     },
     {
         timestamps: true, // CreatedAt aur UpdatedAt automatically add kar dega

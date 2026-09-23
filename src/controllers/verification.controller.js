@@ -8,7 +8,6 @@ export const checkIn = async (req, res) => {
     const workerId = req.user._id || req.user.id; // Token se worker ki ID
     // console.log('Check-in Request:', { taskId, latitude, longitude, photoUrl });
     try {
-        // 1. Check karein ke required data aaya hai ya nahi
         if (!taskId || latitude === undefined || longitude === undefined || !photoUrl) {
             return res.status(400).json({ message: 'Missing required fields' });
         }
@@ -110,3 +109,18 @@ export const checkOut = async (req, res) => {
         return res.status(500).json({ message: 'Error during check-out', error: error.message });
     }
 };
+
+export const getAllVerifications = async (req, res) => {
+    const user = req.user; // Token se user ki details
+    try {
+        if (user.role !== 'manager') {
+            return res.status(403).json({ message: 'Access denied. Only managers can view all verifications.' });
+        }
+        const verifications = await Verification.find()
+            .populate('task', 'title siteLocation status') // Task ke title, siteLocation aur status ko populate karein
+            .populate('worker', 'name email'); // Worker ke name aur email ko populate karein
+        return res.status(200).json(verifications);
+    }catch(error){
+        return res.status(500).json({ message: 'Error fetching verifications', error: error.message });
+    }
+}
