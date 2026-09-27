@@ -104,3 +104,23 @@ export const logoutUser = async (req, res) => {
         res.status(500).json({ message: 'Internal server error' });
     }
 }
+
+export const updatePaymentStatus = async (req, res) => {
+    try {
+        const userId = req.params.id;
+        const {bankName, accountNumber, accountHolderName, jazzcashOrEasypaisa} = req.body;
+        console.log(bankName, accountNumber, accountHolderName, jazzcashOrEasypaisa)
+        console.log(userId)
+        const user = await User.findByIdAndUpdate(userId, { 
+            paymentMethod: {
+                    bankName: bankName || '',
+                    accountNumber: accountNumber || '',
+                    accountHolderName: accountHolderName || '',
+                    jazzcashOrEasypaisa: jazzcashOrEasypaisa || ''
+                }
+         }, { returnDocument: 'after' });
+        res.status(200).json(user);
+    } catch (error) {
+        res.status(500).json({ message: 'Internal server error' });
+    }
+}

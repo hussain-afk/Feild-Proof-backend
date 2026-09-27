@@ -1,15 +1,23 @@
 import Task from "../models/task.model.js";
 import Verification from "../models/verification.model.js";
 import uploadImage from "../services/uploadImage.service.js";
+import User from "../models/user.model.js";
 
 export const checkIn = async (req, res) => {
     const { taskId, latitude, longitude } = req.body;
     const photoUrl = req.file
-    const workerId = req.user._id || req.user.id; // Token se worker ki ID
+    const worker = req.user; // Token se worker ki ID
     // console.log('Check-in Request:', { taskId, latitude, longitude, photoUrl });
     try {
         if (!taskId || latitude === undefined || longitude === undefined || !photoUrl) {
             return res.status(400).json({ message: 'Missing required fields' });
+        }
+        const user = await User.findById(worker._id || worker.id);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        if(!user.paymentMethod){
+            return res.status(400).json({ message: 'payment method not set' });
         }
 
         // 2. Database se Task dhoondhein
@@ -32,7 +40,7 @@ export const checkIn = async (req, res) => {
         // 4. Verification Database mein Entry Save Karein
         const newVerification = await Verification.create({
             task: taskId,
-            worker: workerId,
+            worker: worker._id || worker.id,
             checkIn: {
                 time: new Date(),
                 latitude,
@@ -122,5 +130,22 @@ export const getAllVerifications = async (req, res) => {
         return res.status(200).json(verifications);
     }catch(error){
         return res.status(500).json({ message: 'Error fetching verifications', error: error.message });
+    }
+}
+
+export const deleteVerification = async (req, res) => {
+    try {
+        const verificationId = req.params.id;
+        const user = req.user; // Token se user ki details
+        if (user.role !== 'manager') {
+            return res.status(403).json({ message: 'Access denied. Only managers can delete verifications.' });
+        }
+        const deletedVerification = await Verification.findByIdAndDelete(verificationId);
+        if (!deletedVerification) {
+            return res.status(404).json({ message: 'Verification not found' });
+        }
+        return res.status(200).json({ message: 'Verification deleted successfully' });
+    } catch (error) {
+        return res.status(500).json({ message: 'Error deleting verification'});
     }
 }

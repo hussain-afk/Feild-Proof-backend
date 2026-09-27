@@ -17,11 +17,11 @@ const userSchema = new mongoose.Schema(
         password: {
             type: String,
             required: [true, 'Password is required'],
-            select: false, // Security ke liye default query mein password skip hoga
+            select: false,
         },
         role: {
             type: String,
-            enum: ['admin', 'worker'],
+            enum: ['admin', 'manager', 'worker'],
             default: 'worker',
         },
         phone: {
@@ -31,33 +31,40 @@ const userSchema = new mongoose.Schema(
         },
         hourlyRate: {
             type: Number,
-            default: 0, // Invoicing calculation ke liye (Worker role ke liye)
+            default: 0,
         },
         avatar: {
             type: String,
-            default: '', // Profile picture URL
+            default: '',
         },
-        paymentDetails: {
-            bankName: {
-                type: String,
-                default: '',
+        paymentMethod: {
+            type: {
+                bankName: {
+                    type: String,
+                    default: '',
+                    trim: true,
+                },
+                accountNumber: {
+                    type: String,
+                    default: '',
+                    trim: true,
+                },
+                accountHolderName: {
+                    type: String,
+                    default: '',
+                    trim: true,
+                },
+                jazzcashOrEasypaisa: {
+                    type: String,
+                    default: '',
+                    trim: true,
+                },
             },
-            accountNumber: {
-                type: String,
-                default: '',
-            },
-            accountHolderName: {
-                type: String,
-                default: '',
-            },
-            jazzcashOrEasypaisa: {
-                type: String,
-                default: '',
-            }
-        }
+            default: null, // Initial save par value null jayegi
+        },
     },
     {
-        timestamps: true, // CreatedAt aur UpdatedAt automatically add kar dega
+        timestamps: true,
     }
 );
 
