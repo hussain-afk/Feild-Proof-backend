@@ -15,7 +15,6 @@ const app = express();
 // Render par PORT dynamically assign hota hai, isliye fallback (10000 / envConfig.port) rakhein
 const PORT = process.env.PORT || envConfig.port || 4000;
 const FRONTEND_URL = envConfig.frontendUrl;
-
 // Middlewares
 app.use(cors({
   origin: FRONTEND_URL,

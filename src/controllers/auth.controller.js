@@ -1,6 +1,7 @@
 import User from '../models/user.model.js';
 import bcrypt from 'bcryptjs';
 import generateToken from '../services/token.service.js';
+import uploadImage from '../services/uploadImage.service.js';
 
 export const registerUser = async (req, res) => {
     try {
@@ -108,18 +109,47 @@ export const logoutUser = async (req, res) => {
 export const updatePaymentStatus = async (req, res) => {
     try {
         const userId = req.params.id;
-        const {bankName, accountNumber, accountHolderName, jazzcashOrEasypaisa} = req.body;
+        const { bankName, accountNumber, accountHolderName, jazzcashOrEasypaisa } = req.body;
         console.log(bankName, accountNumber, accountHolderName, jazzcashOrEasypaisa)
         console.log(userId)
-        const user = await User.findByIdAndUpdate(userId, { 
+        const user = await User.findByIdAndUpdate(userId, {
             paymentMethod: {
-                    bankName: bankName || '',
-                    accountNumber: accountNumber || '',
-                    accountHolderName: accountHolderName || '',
-                    jazzcashOrEasypaisa: jazzcashOrEasypaisa || ''
-                }
-         }, { returnDocument: 'after' });
+                bankName: bankName || '',
+                accountNumber: accountNumber || '',
+                accountHolderName: accountHolderName || '',
+                jazzcashOrEasypaisa: jazzcashOrEasypaisa || ''
+            }
+        }, { returnDocument: 'after' });
         res.status(200).json(user);
+    } catch (error) {
+        res.status(500).json({ message: 'Internal server error' });
+    }
+}
+
+export const updateUser = async (req, res) => {
+    try {
+        const userId = req.params.id;
+        const user = req.user;
+        const avatar = req.file
+        console.log(avatar)
+        const { name, email, phone, hourlyRate, password } = req.body;
+        if (!user) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+        const uploadedImageUrl = avatar ? await uploadImage(avatar) : user.avatar;
+        const hashedPassword = password ? await bcrypt.hash(password, 10) : user.password;
+        const updatedUser = await User.findByIdAndUpdate(userId, {
+            name,
+            email,
+            phone,
+            hourlyRate,
+            avatar: uploadedImageUrl,
+            password: hashedPassword
+        }, {
+            returnDocument: 'after'
+        });
+        res.status(200).json(updatedUser);
+
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
     }
