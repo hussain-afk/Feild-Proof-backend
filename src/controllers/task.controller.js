@@ -101,7 +101,9 @@ export const getAllTasks = async (req, res) => {
         if (user.role !== 'manager' && user.role !== 'worker') {
             return res.status(403).json({ message: 'Access denied' });
         }
-        const tasks = await Task.find({}).populate('assignedWorker');
+        const tasks = await Task.find({
+            createdBy: user.id
+        }).populate('assignedWorker');
         res.status(200).json(tasks);
     } catch (error) {
         res.status(500).json({ message: 'Error fetching tasks', error: error.message });
