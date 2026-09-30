@@ -12,9 +12,16 @@ const taskSchema = new mongoose.Schema(
             trim: true,
         },
         assignedWorker: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'User',
-            required: [true, 'Assigned worker is required'],
+            type: [{
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'User'
+            }],
+            validate: {
+                validator: function (v) {
+                    return Array.isArray(v) && v.length > 0;
+                },
+                message: 'At least one assigned worker is required'
+            }
         },
         createdBy: {
             type: mongoose.Schema.Types.ObjectId,

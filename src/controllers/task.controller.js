@@ -4,52 +4,70 @@ import mongoose from 'mongoose';
 
 export const createTask = async (req, res) => {
     const { title, description, assignedWorker, siteLocation, dueDate } = req.body;
+    console.log("Assigned Workers Received:", assignedWorker);
     const user = req.user;
 
     try {
-        if (user.role !== 'manager') {
+        if (user.role !== 'manager' && user.role !== 'admin') {
             return res.status(403).json({ message: 'Only admin or manager can create a task' });
         }
 
-        if (!title || !assignedWorker || !siteLocation || !dueDate) {
-            return res.status(400).json({ message: 'Missing required fields' });
+        // 1. Ensure assignedWorker is an Array (Normalizes single or multiple worker IDs)
+        const workersArray = Array.isArray(assignedWorker) 
+            ? assignedWorker 
+            : assignedWorker ? [assignedWorker] : [];
+
+        if (!title || workersArray.length === 0 || !siteLocation || !dueDate) {
+            return res.status(400).json({ message: 'Missing required fields or workers selection' });
         }
 
-        // 1. Task Document Create Karein
+        // 2. Task Document Create Karein (Array pass karein)
         const newTask = await Task.create({
             title,
             description,
-            assignedWorker,
+            assignedWorker: workersArray,
             siteLocation,
             dueDate,
-            createdBy: user.id,
+            createdBy: user.id || user._id,
         });
 
-        // 2. Created document par populate run karein
-        const populatedTask = await newTask.populate('assignedWorker');
+        // 3. Populate Array of Assigned Workers
+        const populatedTask = await newTask.populate('assignedWorker', 'name email avatar role');
 
-        const newNotification = await Notification.create({
-            recipient: assignedWorker,
-            sender: user.id,
-            title: 'New Task Assigned',
-            message: `You have been assigned a new task: "${title}"`,
-            task: newTask._id,
-        });
-
-        const populatedNotification = await newNotification.populate('sender', 'name email');
         const io = req.app.get('io');
 
-        if (io && assignedWorker) {
-            io.to(assignedWorker.toString()).emit('new_task_assigned', {
-                message: `New task assigned: ${title}`,
-                task: populatedTask,
-                notification: populatedNotification // Database notification object sent
+        // 4. Har Worker ke liye alag Notification banayein aur Socket Emit karein
+        const notificationPromises = workersArray.map(async (workerId) => {
+            // Notification Record in DB
+            const newNotification = await Notification.create({
+                recipient: workerId,
+                sender: user.id || user._id,
+                title: 'New Task Assigned',
+                message: `You have been assigned a new task: "${title}"`,
+                task: newTask._id,
             });
-        }
 
+            const populatedNotification = await newNotification.populate('sender', 'name email');
+
+            // Individual Socket Room Emit
+            if (io) {
+                io.to(workerId.toString()).emit('new_task_assigned', {
+                    message: `New task assigned: ${title}`,
+                    task: populatedTask,
+                    notification: populatedNotification
+                });
+            }
+
+            return newNotification;
+        });
+
+        await Promise.all(notificationPromises);
+
+        // 5. Response Return
         res.status(201).json(populatedTask);
 
     } catch (error) {
+        console.error("Task Creation Controller Error:", error);
         res.status(500).json({ message: 'Error creating task', error: error.message });
     }
 };
