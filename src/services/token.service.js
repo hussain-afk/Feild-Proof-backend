@@ -4,6 +4,7 @@ import envConfig from '../config/env.config.js';
 const generateToken = (user) => {
     const payload = {
         id: user._id,
+        name: user.name,
         role: user.role,
         email: user.email,
     };
