@@ -5,7 +5,7 @@ import User from "../models/user.model.js";
 import adminInfo from "../models/adminInfo.model.js";
 
 // Agar true ho to worker check-out bhi site ke radius ke andar se hi kar sakega
-const ENFORCE_CHECKOUT_GEOFENCE = false;
+const ENFORCE_CHECKOUT_GEOFENCE = true;
 
 function getDistanceInMeters(lat1, lon1, lat2, lon2) {
   const R = 6371000; // Earth's radius in meters
@@ -109,6 +109,10 @@ export const checkIn = async (req, res) => {
     // Geofence check
     const workerLat = Number(latitude);
     const workerLng = Number(longitude);
+    if (!Number.isFinite(workerLat) || workerLat < -90 || workerLat > 90 ||
+        !Number.isFinite(workerLng) || workerLng < -180 || workerLng > 180) {
+      return res.status(400).json({ message: 'Invalid location data. Please try again.' });
+    }
     const geo = checkGeofence(task, workerLat, workerLng);
 
     if (!geo.valid) {
@@ -150,7 +154,8 @@ export const checkIn = async (req, res) => {
       verification: newVerification,
     });
   } catch (error) {
-    return res.status(500).json({ message: 'Error during check-in', error: error.message });
+    console.error('Check-in error:', error);
+    return res.status(500).json({ message: 'Error during check-in' });
   }
 };
 
@@ -185,6 +190,10 @@ export const checkOut = async (req, res) => {
 
     const workerLat = Number(latitude);
     const workerLng = Number(longitude);
+    if (!Number.isFinite(workerLat) || workerLat < -90 || workerLat > 90 ||
+        !Number.isFinite(workerLng) || workerLng < -180 || workerLng > 180) {
+      return res.status(400).json({ message: 'Invalid location data. Please try again.' });
+    }
 
     if (ENFORCE_CHECKOUT_GEOFENCE) {
       const geo = checkGeofence(task, workerLat, workerLng);
@@ -227,7 +236,8 @@ export const checkOut = async (req, res) => {
       verification,
     });
   } catch (error) {
-    return res.status(500).json({ message: 'Error during check-out', error: error.message });
+    console.error('Check-out error:', error);
+    return res.status(500).json({ message: 'Error during check-out' });
   }
 };
 
@@ -254,7 +264,8 @@ export const getAllVerifications = async (req, res) => {
 
     return res.status(200).json(verifications);
   } catch (error) {
-    return res.status(500).json({ message: 'Error fetching verifications', error: error.message });
+    console.error('Verification fetch error:', error);
+    return res.status(500).json({ message: 'Error fetching verifications' });
   }
 };
 
@@ -295,6 +306,7 @@ export const deleteVerification = async (req, res) => {
 
     return res.status(200).json({ message: 'Verification deleted successfully' });
   } catch (error) {
-    return res.status(500).json({ message: 'Error deleting verification', error: error.message });
+    console.error('Verification delete error:', error);
+    return res.status(500).json({ message: 'Error deleting verification' });
   }
 };

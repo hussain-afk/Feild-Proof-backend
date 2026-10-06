@@ -2,6 +2,7 @@ import Task from '../models/task.model.js';
 import Notification from '../models/notification.model.js';
 import mongoose from 'mongoose';
 import AdminInfo from '../models/adminInfo.model.js';
+import User from '../models/user.model.js';
 
 // ---------------------------------------------------------------
 // Small helper: ek event ko kai rooms me bhejta hai.
@@ -35,13 +36,31 @@ export const createTask = async (req, res) => {
         if (!title || workersArray.length === 0 || !siteLocation || !dueDate) {
             return res.status(400).json({ message: 'Missing required fields or workers selection' });
         }
+        const uniqueWorkers = [...new Set(workersArray.map(String))];
+        const workers = await User.find({
+            _id: { $in: uniqueWorkers },
+            role: 'worker',
+        }).select('_id');
+        if (workers.length !== uniqueWorkers.length) {
+            return res.status(400).json({ message: 'All assigned users must be valid workers' });
+        }
+        const latitude = Number(siteLocation.latitude);
+        const longitude = Number(siteLocation.longitude);
+        const radius = Number(siteLocation.radiusInMeters);
+        if (
+            !Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+            !Number.isFinite(longitude) || longitude < -180 || longitude > 180 ||
+            !Number.isFinite(radius) || radius < 10 || radius > 10000
+        ) {
+            return res.status(400).json({ message: 'Invalid site location or radius' });
+        }
 
         // 2. Task create
         const creatorId = user.id || user._id;
         const newTask = await Task.create({
             title,
             description,
-            assignedWorker: workersArray,
+            assignedWorker: uniqueWorkers,
             siteLocation,
             dueDate,
             createdBy: creatorId,
@@ -57,7 +76,7 @@ export const createTask = async (req, res) => {
         const io = req.app.get('io');
 
         // 4. Har worker ke liye notification + socket emit
-        const notificationPromises = workersArray.map(async (workerId) => {
+        const notificationPromises = uniqueWorkers.map(async (workerId) => {
             const newNotification = await Notification.create({
                 recipient: workerId,
                 sender: creatorId,
@@ -90,7 +109,7 @@ export const createTask = async (req, res) => {
 
     } catch (error) {
         console.error("Task Creation Controller Error:", error);
-        res.status(500).json({ message: 'Error creating task', error: error.message });
+        res.status(500).json({ message: 'Error creating task' });
     }
 };
 
@@ -108,7 +127,7 @@ export const getMyTasks = async (req, res) => {
 
     } catch (error) {
         console.error("getMyTasks error:", error);
-        return res.status(500).json({ message: "Error fetching worker tasks", error: error.message });
+        return res.status(500).json({ message: "Error fetching worker tasks" });
     }
 };
 
@@ -119,28 +138,31 @@ export const getTaskById = async (req, res) => {
         if (user.role !== 'manager' && user.role !== 'worker') {
             return res.status(403).json({ message: 'Access denied' });
         }
-        const task = await Task.findById(id).populate('assignedWorker');
+        const accessFilter = user.role === 'manager'
+            ? { _id: id, createdBy: user.id || user._id }
+            : { _id: id, assignedWorker: user.id || user._id };
+        const task = await Task.findOne(accessFilter).populate('assignedWorker');
         if (!task) {
             return res.status(404).json({ message: 'Task not found' });
         }
         res.status(200).json(task);
     } catch (error) {
-        res.status(500).json({ message: 'Error fetching task', error: error.message });
+        res.status(500).json({ message: 'Error fetching task' });
     }
 };
 
 export const getAllTasks = async (req, res) => {
     const user = req.user;
     try {
-        if (user.role !== 'manager' && user.role !== 'worker') {
+        if (user.role !== 'manager' && user.role !== 'admin') {
             return res.status(403).json({ message: 'Access denied' });
         }
         const tasks = await Task.find({
-            createdBy: user.id
+            ...(user.role === 'manager' ? { createdBy: user.id || user._id } : {})
         }).populate('assignedWorker');
         res.status(200).json(tasks);
     } catch (error) {
-        res.status(500).json({ message: 'Error fetching tasks', error: error.message });
+        res.status(500).json({ message: 'Error fetching tasks' });
     }
 };
 
@@ -183,6 +205,6 @@ export const deleteTask = async (req, res) => {
 
         res.status(200).json({ message: 'Task deleted successfully', taskId: payload.taskId });
     } catch (error) {
-        res.status(500).json({ message: 'Error deleting task', error: error.message });
+        res.status(500).json({ message: 'Error deleting task' });
     }
 };

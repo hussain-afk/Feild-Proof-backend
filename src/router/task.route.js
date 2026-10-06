@@ -9,8 +9,6 @@ router.post('/create', authMiddleware, createTask);
 
 router.get("/my-tasks", authMiddleware, getMyTasks);
 
-router.get("/task/:id", authMiddleware, getAllTasks);
-
 router.get("/all", authMiddleware, getAllTasks);
 
 router.delete("/del-task/:id", authMiddleware, deleteTask);

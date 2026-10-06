@@ -4,11 +4,17 @@ import generateToken from '../services/token.service.js';
 import uploadImage from '../services/uploadImage.service.js';
 import AdminInfo from '../models/adminInfo.model.js';
 
+const cookieOptions = {
+    httpOnly: true,
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    secure: process.env.NODE_ENV === 'production',
+};
+
 export const registerUser = async (req, res) => {
     try {
-        const { name, email, password, phone, role, hourlyRate, avatar } = req.body;
+        const { name, email, password, phone } = req.body;
         if (!name || !email || !password) {
-            return res.status(400).json({ message: 'Name, email, password, phone, role, and hourlyRate are required' });
+            return res.status(400).json({ message: 'Name, email, and password are required' });
         }
         const isUserExists = await User.findOne({ email });
         if (isUserExists) {
@@ -19,22 +25,16 @@ export const registerUser = async (req, res) => {
             name,
             email,
             phone,
-            role,
-            hourlyRate,
-            avatar,
+            role: 'worker',
             password: hashedPassword,
         })
         const message = `New user registered with email: ${email}`;
         const token = generateToken(newUser);
-        res.cookie('token', token,
-            {
-                httpOnly: true,
-                sameSite: 'none',
-                secure: true
-            }
-        )
+        res.cookie('token', token, cookieOptions);
         const adminInfo = await AdminInfo.create({ message });
-        res.status(201).json(newUser);
+        const safeUser = newUser.toObject();
+        delete safeUser.password;
+        res.status(201).json(safeUser);
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
     }
@@ -55,15 +55,11 @@ export const loginUser = async (req, res) => {
     }
     const token = generateToken(isUserValid);
     const message = `User logged in with email: ${email}`;
-    res.cookie('token', token,
-        {
-            httpOnly: true,
-            sameSite: 'none',
-            secure: true
-        }
-    )
-    const adminInfo = await AdminInfo.create({ message });
-    res.status(200).json(isUserValid);
+    res.cookie('token', token, cookieOptions);
+    await AdminInfo.create({ message });
+    const safeUser = isUserValid.toObject();
+    delete safeUser.password;
+    res.status(200).json(safeUser);
 }
 
 export const getCurrentUser = async (req, res) => {
@@ -85,7 +81,7 @@ export const getAllUsers = async (req, res) => {
         return res.status(403).json({ message: 'Access denied' });
     }
     try {
-        const users = await User.find().select('-password');
+        const users = await User.find().select('name email phone hourlyRate avatar role createdAt updatedAt');
         res.status(200).json(users);
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
@@ -98,13 +94,7 @@ export const logoutUser = async (req, res) => {
         if (!user) {
             return res.status(401).json({ message: 'Unauthorized' });
         }
-        res.clearCookie("token",
-            {
-                httpOnly: true,
-                secure: true,
-                sameSite: "none",
-            }
-        );
+        res.clearCookie("token", cookieOptions);
         const message = `User logged out with email: ${user.email}`;
         const adminInfo = await AdminInfo.create({ message });
         res.status(200).json({ message: 'Logout successful' });
@@ -116,9 +106,11 @@ export const logoutUser = async (req, res) => {
 export const updatePaymentStatus = async (req, res) => {
     try {
         const userId = req.params.id;
+        const actorId = String(req.user.id || req.user._id);
+        if (actorId !== String(userId) && req.user.role !== 'admin') {
+            return res.status(403).json({ message: 'You can only update your own payment method' });
+        }
         const { bankName, accountNumber, accountHolderName, jazzcashOrEasypaisa } = req.body;
-        console.log(bankName, accountNumber, accountHolderName, jazzcashOrEasypaisa)
-        console.log(userId)
         const user = await User.findByIdAndUpdate(userId, {
             paymentMethod: {
                 bankName: bankName || '',
@@ -127,6 +119,7 @@ export const updatePaymentStatus = async (req, res) => {
                 jazzcashOrEasypaisa: jazzcashOrEasypaisa || ''
             }
         }, { returnDocument: 'after' });
+        if (!user) return res.status(404).json({ message: 'User not found' });
         res.status(200).json(user);
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
@@ -135,15 +128,20 @@ export const updatePaymentStatus = async (req, res) => {
 
 export const updateUser = async (req, res) => {
     try {
-        const userId = req.params.id;
         const user = req.user;
+        const userId = req.params.id;
         const avatar = req.file
         const { name, email, phone, hourlyRate, password } = req.body;
         if (!user) {
             return res.status(401).json({ message: 'Unauthorized' });
         }
-        const uploadedImageUrl = avatar ? await uploadImage(avatar) : user.avatar;
-        const hashedPassword = password ? await bcrypt.hash(password, 10) : user.password;
+        if (String(user.id || user._id) !== String(userId)) {
+            return res.status(403).json({ message: 'You can only update your own profile' });
+        }
+        const existingUser = await User.findById(userId).select('+password');
+        if (!existingUser) return res.status(404).json({ message: 'User not found' });
+        const uploadedImageUrl = avatar ? await uploadImage(avatar) : existingUser.avatar;
+        const hashedPassword = password ? await bcrypt.hash(password, 10) : existingUser.password;
         const updatedUser = await User.findByIdAndUpdate(userId, {
             name,
             email,
@@ -152,8 +150,11 @@ export const updateUser = async (req, res) => {
             avatar: uploadedImageUrl,
             password: hashedPassword
         }, {
-            returnDocument: 'after'
+            returnDocument: 'after',
+            runValidators: true,
+            select: '-password',
         });
+        if (!updatedUser) return res.status(404).json({ message: 'User not found' });
         const message = `User updated with email: ${updatedUser.email}`;
         const adminInfo = await AdminInfo.create({ message });
         res.status(200).json(updatedUser);
@@ -185,7 +186,7 @@ export const updateByAdmin = async (req, res) => {
         const updatedName = name || existingName;
         const updatedEmail = email || existingEmail;
         const updatedPhone = phone || existingPhone;
-        const updatedHourlyRate = hourlyRate || existingHourlyRate;
+        const updatedHourlyRate = hourlyRate === undefined || hourlyRate === '' ? existingHourlyRate : hourlyRate;
         const updatedRole = role || existingRole;
         const updatedUser = await User.findByIdAndUpdate(userId, {
             name: updatedName,

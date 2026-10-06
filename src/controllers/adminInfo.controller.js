@@ -9,6 +9,7 @@ export const getAdminInfos = async (req, res) => {
         const adminInfos = await AdminInfo.find().sort({ createdAt: -1 });
         return res.status(200).json(adminInfos);
     } catch (error) {
-        return res.status(500).json({ message: 'Error fetching admin info', error: error.message });
+        console.error('Admin info fetch error:', error);
+        return res.status(500).json({ message: 'Error fetching admin info' });
     }
 }

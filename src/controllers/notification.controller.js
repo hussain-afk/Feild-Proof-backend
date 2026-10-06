@@ -9,7 +9,8 @@ export const getMyNotifications = async (req, res) => {
 
     res.status(200).json(notifications);
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching notifications', error: error.message });
+    console.error('Notification fetch error:', error);
+    res.status(500).json({ message: 'Error fetching notifications' });
   }
 };
 
@@ -20,13 +21,17 @@ export const deleteNotification = async (req, res) => {
       return res.status(401).json({ message: 'Unauthorized' });
     }
     const notificationId = req.params.id;
-    const notification = await Notification.findById(notificationId);
+    const notification = await Notification.findOne({
+      _id: notificationId,
+      recipient: user.id,
+    });
     if (!notification) {
       return res.status(404).json({ message: 'Notification not found' });
     }
     await Notification.findByIdAndDelete(notificationId);
     res.status(200).json({ message: 'Notification deleted successfully' });
   } catch (error) {
-    res.status(500).json({ message: 'Error deleting notification', error: error.message });
+    console.error('Notification delete error:', error);
+    res.status(500).json({ message: 'Error deleting notification' });
   }
 }

@@ -25,6 +25,14 @@ app.use(cors({
   origin: FRONTEND_URL,
   credentials: true
 }));
+app.use((req, res, next) => {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) &&
+      req.headers.origin &&
+      req.headers.origin !== FRONTEND_URL) {
+    return res.status(403).json({ message: 'Origin not allowed' });
+  }
+  next();
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -55,7 +63,7 @@ io.use(async (socket, next) => {
 
     if (!token) return next(new Error('Not authenticated'));
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET); // <-- aapka secret
+    const decoded = jwt.verify(token, envConfig.jwtSecret);
     const userId = decoded.userId || decoded.id || decoded._id; // jo bhi aap jwt.sign me daalte ho
 
     const user = await User.findById(userId).select('role');
@@ -100,6 +108,14 @@ app.use('/api/tasks', taskRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/verify', verificationRoutes);
 app.use('/api/admin', adminRoutes);
+
+app.use((error, _req, res, _next) => {
+  if (error?.code === 'LIMIT_FILE_SIZE' || error?.message === 'Only image uploads are allowed') {
+    return res.status(400).json({ message: error.message });
+  }
+  console.error('Unhandled server error:', error);
+  return res.status(500).json({ message: 'Internal server error' });
+});
 
 // Server Listen
 server.listen(PORT, () => {
