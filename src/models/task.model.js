@@ -29,10 +29,13 @@ const taskSchema = new mongoose.Schema(
             required: true,
         },
         siteLocation: {
-            name: { type: String, required: true },
-            latitude: { type: Number, required: true, min: -90, max: 90 },
-            longitude: { type: Number, required: true, min: -180, max: 180 },
-            radiusInMeters: { type: Number, default: 100, min: 10, max: 10000 },
+            type: {
+                name: { type: String, required: true },
+                latitude: { type: Number, required: true, min: -90, max: 90 },
+                longitude: { type: Number, required: true, min: -180, max: 180 },
+                radiusInMeters: { type: Number, default: 100, min: 10, max: 10000 },
+            },
+            required: false,
         },
         status: {
             type: String,

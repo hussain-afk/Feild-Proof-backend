@@ -13,9 +13,9 @@ const verificationSchema = new mongoose.Schema(
             required: true,
         },
         checkIn: {
-            time: { type: Date, required: true },
-            latitude: { type: Number, required: true },
-            longitude: { type: Number, required: true },
+            time: { type: Date, required: false },
+            latitude: { type: Number, required: false },
+            longitude: { type: Number, required: false },
             photoUrl: { type: String, required: true },
         },
         checkOut: {
