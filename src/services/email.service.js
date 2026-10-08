@@ -16,7 +16,7 @@ const transporter = nodemailer.createTransport({
 });
 export const sendVerificationEmail = async (email, code) => {
   await transporter.sendMail({
-    from: `"FieldProof" <${process.env.EMAIL_USER}>`,
+    from: `"FieldProof" <${process.env.SUPPORT_EMAIL}>`,
 
     to: email,
 
