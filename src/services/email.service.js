@@ -1,13 +1,26 @@
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const transporter = nodemailer.createTransport({
+  host: "in-v3.mailjet.com",
+  port: 587,
+  secure: false,
+
+  auth: {
+    user: process.env.MAILJET_API_KEY,
+    pass: process.env.MAILJET_SECRET_KEY,
+  },
+
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
+});
 
 export const sendVerificationEmail = async (email, code) => {
   try {
-    const { data, error } = await resend.emails.send({
-      from: "FieldProof <onboarding@resend.dev>",
+    const info = await transporter.sendMail({
+      from: `"FieldProof" <muhammadhussainmemon2566@gmail.com>`,
 
-      to: [email],
+      to: email,
 
       subject: "Verify your FieldProof account",
 
@@ -188,17 +201,14 @@ export const sendVerificationEmail = async (email, code) => {
       `,
     });
 
-    if (error) {
-      console.error("Resend error:", error);
-      throw new Error(error.message);
-    }
+    console.log("Verification email sent:", info.messageId);
 
-    console.log("Verification email sent:", data?.id);
-
-    return data;
-
+    return info;
   } catch (error) {
     console.error("Email sending error:", error);
-    throw error;
+
+    throw new Error(
+      error?.message || "Failed to send verification email"
+    );
   }
 };

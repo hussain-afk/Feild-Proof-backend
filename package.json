@@ -23,7 +23,7 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.10.1",
     "multer": "^2.4.0",
-    "resend": "^6.32.1",
+    "nodemailer": "^10.0.16",
     "socket.io": "^4.8.3"
   },
   "devDependencies": {
