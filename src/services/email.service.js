@@ -1,20 +1,19 @@
 import nodemailer from "nodemailer";
 
-const emailUser = process.env.SUPPORT_EMAIL
-const emailPass = process.env.SUPPORT_EMAIL_PASSWORD
 const transporter = nodemailer.createTransport({
   host: "smtp.gmail.com",
   port: 587,
   secure: false,
 
   auth: {
-    user: emailUser,
-    pass: emailPass,
+    user: process.env.SUPPPORT_EMAIL,
+    pass: process.env.SUPPORT_EMAIL_PASSWORD,
   },
 
-  family: 4,
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
 });
-
 export const sendVerificationEmail = async (email, code) => {
   await transporter.sendMail({
     from: `"FieldProof" <${process.env.EMAIL_USER}>`,
