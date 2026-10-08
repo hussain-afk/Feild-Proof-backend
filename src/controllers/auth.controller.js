@@ -3,6 +3,9 @@ import bcrypt from 'bcryptjs';
 import generateToken from '../services/token.service.js';
 import uploadImage from '../services/uploadImage.service.js';
 import AdminInfo from '../models/adminInfo.model.js';
+import { sendVerificationEmail } from '../services/email.service.js';
+import generateVerificationCode from '../services/codeGenerate.service.js';
+import crypto from 'crypto';
 
 const cookieOptions = {
     httpOnly: true,
@@ -205,6 +208,105 @@ export const updateByAdmin = async (req, res) => {
     }
 }
 
+export const sendVerificationCode = async (req, res) => {
+  try {
+    // Logged-in user
+    const loggedInUser = req.user;
+
+    if (!loggedInUser) {
+      return res.status(401).json({
+        message: "Unauthorized",
+      });
+    }
+
+    // Check role
+    if (
+      loggedInUser.role !== "admin" &&
+      loggedInUser.role !== "manager" &&
+      loggedInUser.role !== "worker"
+    ) {
+      return res.status(403).json({
+        message: "Access denied",
+      });
+    }
+
+    // Email required
+    if (!loggedInUser.email) {
+      return res.status(400).json({
+        message: "Email is required",
+      });
+    }
+
+    // Find user by email
+    const isUserExists = await User.findOne({
+      email: loggedInUser.email.trim().toLowerCase(),
+    });
+
+    if (!isUserExists) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    // Already verified?
+    if (isUserExists.isVerified) {
+      return res.status(400).json({
+        message: "Email is already verified",
+      });
+    }
+
+    // Generate 6-digit code
+    const verificationCode = generateVerificationCode();
+
+    // Save code to the FOUND USER
+    isUserExists.emailVerificationCode = verificationCode;
+
+    // Code expires after 10 minutes
+    isUserExists.emailVerificationExpires =
+      new Date(Date.now() + 10 * 60 * 1000);
+
+    await isUserExists.save();
+
+    // Send email
+    await sendVerificationEmail(
+      isUserExists.email,
+      verificationCode
+    );
+
+    return res.status(200).json({
+      message: "Verification code sent successfully",
+    });
+
+  } catch (error) {
+    console.error("Send verification code error:", error);
+
+    return res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
+export const verifyEmail = async (req, res) => {
+    try {
+        const { email, code } = req.body;
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        if (user.emailVerificationCode !== code) {
+            return res.status(400).json({ message: 'Invalid verification code' });
+        }
+        user.isVerified = true;
+        user.emailVerificationCode = null;
+        user.emailVerificationExpires = null;
+        await user.save();
+        res.status(200).json({ message: 'Email verified successfully' });
+    } catch (error) {
+        res.status(500).json({ message: 'Internal server error' });
+    }
+}
+
 export const deleteUser = async (req, res) => {
     try {
         const userId = req.params.id;
@@ -216,7 +318,7 @@ export const deleteUser = async (req, res) => {
         if (!deletedUser) {
             return res.status(404).json({ message: 'User not found' });
         }
-        const message = `User deleted with email: ${deletedUser.email}`;
+        const message = `User deleted By Admin: ${user.name} with email: ${deletedUser.email}`;
         const adminInfo = await AdminInfo.create({ message });
         res.status(200).json({ message: 'User deleted successfully' });
     } catch (error) {

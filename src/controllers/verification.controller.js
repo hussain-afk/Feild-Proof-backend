@@ -64,16 +64,6 @@ const broadcastVerificationChange = (io, task, workerId, status) => {
   io.to('admins').emit('admin_info_updated');
 };
 
-// ---------------------------------------------------------------
-// CHECK IN
-// ---------------------------------------------------------------
-// =====================================================================
-// 1) In 3 helpers ko apni file me controllers se UPAR paste karo.
-//    (checkGeofence, uploadImage, broadcastVerificationChange waghera
-//     aapki file me pehle se hain, unko mat chhedna.)
-// =====================================================================
-
-// "", null, undefined ko "value nahi di gayi" maano
 const hasValue = (value) =>
   value !== undefined && value !== null && String(value).trim() !== "";
 
@@ -171,24 +161,16 @@ export const checkIn = async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-
-    // 3. Payment method check
-    if (!user.paymentMethod) {
-      return res.status(400).json({ message: "Payment method not set" });
-    }
-
     // 4. Find task
     const task = await Task.findById(taskId);
     if (!task) {
       return res.status(404).json({ message: "Task not found" });
     }
-
     // 5. Worker is task par assigned hai?
     const isAssigned = (task.assignedWorker || []).some((id) => String(id) === workerId);
     if (!isAssigned) {
       return res.status(403).json({ message: "This task is not assigned to you" });
     }
-
     // 6. Is worker ka is task par pehle se record hai?
     const existing = await Verification.findOne({ task: taskId, worker: workerId });
 

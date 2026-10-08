@@ -1,5 +1,16 @@
 import express from 'express';
-import { registerUser, loginUser, getCurrentUser, getAllUsers, logoutUser, updatePaymentStatus,updateUser } from '../controllers/auth.controller.js';
+import {
+    registerUser,
+    loginUser,
+    getCurrentUser,
+    getAllUsers,
+    logoutUser,
+    updatePaymentStatus,
+    updateUser,
+    deleteUser,
+    sendVerificationCode,
+    verifyEmail
+} from '../controllers/auth.controller.js';
 import authMiddleware from '../middleware/auth.middleware.js';
 import multer from 'multer';
 
@@ -17,12 +28,15 @@ const upload = multer({
     },
 });
 
-router.post('/register',registerUser);
-router.post('/login',loginUser);
+router.post('/register', registerUser);
+router.post('/login', loginUser);
 router.get('/me', authMiddleware, getCurrentUser);
 router.get('/users', authMiddleware, getAllUsers);
 router.post('/logout', authMiddleware, logoutUser);
 router.put('/update-payment/:id', authMiddleware, updatePaymentStatus);
 router.put('/update-user/:id', authMiddleware, upload.single('avatar'), updateUser);
+router.post('/send-verification-code', authMiddleware, sendVerificationCode);
+router.post('/verify-email', authMiddleware, verifyEmail);
+router.delete('/delete-user/:id', authMiddleware, deleteUser);
 
 export default router;
