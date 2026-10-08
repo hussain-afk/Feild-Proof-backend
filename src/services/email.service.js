@@ -3,12 +3,16 @@ import nodemailer from "nodemailer";
 const emailUser = process.env.SUPPORT_EMAIL
 const emailPass = process.env.SUPPORT_EMAIL_PASSWORD
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false,
 
   auth: {
     user: emailUser,
     pass: emailPass,
   },
+
+  family: 4,
 });
 
 export const sendVerificationEmail = async (email, code) => {
