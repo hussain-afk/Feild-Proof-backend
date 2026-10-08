@@ -2,7 +2,7 @@ import nodemailer from "nodemailer";
 
 const transporter = nodemailer.createTransport({
   host: "in-v3.mailjet.com",
-  port: 587,
+  port: 2525,
   secure: false,
 
   auth: {
