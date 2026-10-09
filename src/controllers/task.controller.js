@@ -3,6 +3,7 @@ import Notification from '../models/notification.model.js';
 import mongoose from 'mongoose';
 import AdminInfo from '../models/adminInfo.model.js';
 import User from '../models/user.model.js';
+import Verification from '../models/verification.model.js';
 
 // ---------------------------------------------------------------
 // Small helper: ek event ko kai rooms me bhejta hai.
@@ -177,21 +178,37 @@ export const createTask = async (req, res) => {
 };
 
 export const getMyTasks = async (req, res) => {
-    try {
-        const userId = req.user._id || req.user.id;
-        const workerObjectId = new mongoose.Types.ObjectId(userId);
-
-        const tasks = await Task.find({ assignedWorker: workerObjectId })
-            .populate('assignedWorker', 'name email role')
-            .populate('createdBy', 'name email')
-            .sort({ createdAt: -1 });
-
-        return res.status(200).json(tasks);
-
-    } catch (error) {
-        console.error("getMyTasks error:", error);
-        return res.status(500).json({ message: "Error fetching worker tasks" });
-    }
+  try {
+    const workerId = req.user._id || req.user.id;
+ 
+    const tasks = await Task.find({ assignedWorker: workerId })
+      .populate("assignedWorker", "name email role")
+      .populate("createdBy", "name email")
+      .sort({ createdAt: -1 });
+ 
+    // Is worker ke saare check-in/out records (ek hi query me)
+    const records = await Verification.find({
+      worker: workerId,
+      task: { $in: tasks.map((task) => task._id) },
+    }).select("task checkOut.time");
+ 
+    const progressByTask = new Map(
+      records.map((record) => [
+        String(record.task),
+        record.checkOut?.time ? "checked_out" : "checked_in",
+      ])
+    );
+ 
+    const result = tasks.map((task) => ({
+      ...task.toObject(),
+      myProgress: progressByTask.get(String(task._id)) || "not_started",
+    }));
+ 
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("getMyTasks error:", error);
+    return res.status(500).json({ message: "Error fetching worker tasks" });
+  }
 };
 
 export const getTaskById = async (req, res) => {
