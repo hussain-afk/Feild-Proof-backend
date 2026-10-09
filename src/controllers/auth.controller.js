@@ -5,7 +5,6 @@ import uploadImage from '../services/uploadImage.service.js';
 import AdminInfo from '../models/adminInfo.model.js';
 import { sendVerificationEmail } from '../services/email.service.js';
 import generateVerificationCode from '../services/codeGenerate.service.js';
-import crypto from 'crypto';
 
 const cookieOptions = {
     httpOnly: true,
@@ -84,7 +83,7 @@ export const getAllUsers = async (req, res) => {
         return res.status(403).json({ message: 'Access denied' });
     }
     try {
-        const users = await User.find().select('name email phone hourlyRate avatar role createdAt updatedAt');
+        const users = await User.find().select('name email phone hourlyRate avatar role createdAt updatedAt isVerified');
         res.status(200).json(users);
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
