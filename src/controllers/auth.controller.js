@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import generateToken from '../services/token.service.js';
 import uploadImage from '../services/uploadImage.service.js';
 import AdminInfo from '../models/adminInfo.model.js';
-import { sendVerificationEmail } from '../services/email.service.js';
+import { sendEmail } from '../services/email.service.js';
 import generateVerificationCode from '../services/codeGenerate.service.js';
 
 const cookieOptions = {
@@ -14,7 +14,8 @@ const cookieOptions = {
 
 export const registerUser = async (req, res) => {
     try {
-        const { name, email, password, phone } = req.body;
+        const { name, email, password, phone, role} = req.body;
+        console.log('Register User Request Body:', req.body); // Log the request body for debugging
         if (!name || !email || !password) {
             return res.status(400).json({ message: 'Name, email, and password are required' });
         }
@@ -27,7 +28,7 @@ export const registerUser = async (req, res) => {
             name,
             email,
             phone,
-            role: 'worker',
+            role: role || 'worker',
             password: hashedPassword,
         })
         const message = `New user registered with email: ${email}`;
@@ -267,7 +268,7 @@ export const sendVerificationCode = async (req, res) => {
     await isUserExists.save();
 
     // Send email
-    await sendVerificationEmail(
+    await sendEmail(
       isUserExists.email,
       verificationCode
     );

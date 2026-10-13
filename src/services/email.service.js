@@ -15,7 +15,7 @@ const transporter = nodemailer.createTransport({
   socketTimeout: 15000,
 });
 
-export const sendVerificationEmail = async (email, code) => {
+export const sendEmail = async (email, code) => {
   try {
     const info = await transporter.sendMail({
       from: `"FieldProof" <muhammadhussainmemon2566@gmail.com>`,
