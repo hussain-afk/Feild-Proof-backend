@@ -6,6 +6,7 @@ import uploadImage from '../services/uploadImage.service.js';
 import AdminInfo from '../models/adminInfo.model.js';
 import { sendEmail } from '../services/email.service.js';
 import generateVerificationCode from '../services/codeGenerate.service.js';
+import BlackListTokens from '../models/blackListTokens.model.js';
 
 const cookieOptions = {
     httpOnly: true,
@@ -168,9 +169,14 @@ export const getMyWorkers = async (req, res) => {
 export const logoutUser = async (req, res) => {
     try {
         const user = req.user;
+        const token = req.cookies.token;
         if (!user) {
             return res.status(401).json({ message: 'Unauthorized' });
         }
+        if (!token) {
+            return res.status(401).json({ message: 'Access denied. No token provided.' });
+        }
+        const blackListToken = await BlackListTokens.create({ token });
         res.clearCookie("token", cookieOptions);
         const message = `User logged out with email: ${user.email}`;
         const adminInfo = await AdminInfo.create({ message });
