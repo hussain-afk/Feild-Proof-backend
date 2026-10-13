@@ -66,6 +66,7 @@ export const createTask = async (req, res) => {
         const workers = await User.find({
             _id: { $in: uniqueWorkers },
             role: "worker",
+            managerId: creatorId, // manager sirf apne workers ko assign kar sakta hai
         }).select("_id");
 
         if (workers.length !== uniqueWorkers.length) {
