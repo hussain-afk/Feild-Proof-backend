@@ -1,4 +1,5 @@
 import User from '../models/user.model.js';
+import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import generateToken from '../services/token.service.js';
 import uploadImage from '../services/uploadImage.service.js';
@@ -12,36 +13,96 @@ const cookieOptions = {
     secure: process.env.NODE_ENV === 'production',
 };
 
+const ALLOWED_ROLES = ["worker", "pending_manager"];
+ 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MIN_PASSWORD_LENGTH = 6;
+
 export const registerUser = async (req, res) => {
-    try {
-        const { name, email, password, phone, role} = req.body;
-        console.log('Register User Request Body:', req.body); // Log the request body for debugging
-        if (!name || !email || !password) {
-            return res.status(400).json({ message: 'Name, email, and password are required' });
-        }
-        const isUserExists = await User.findOne({ email });
-        if (isUserExists) {
-            return res.status(400).json({ message: 'User already exists' });
-        }
-        const hashedPassword = await bcrypt.hash(password, 10);
-        const newUser = await User.create({
-            name,
-            email,
-            phone,
-            role: role || 'worker',
-            password: hashedPassword,
-        })
-        const message = `New user registered with email: ${email}`;
-        const token = generateToken(newUser);
-        res.cookie('token', token, cookieOptions);
-        const adminInfo = await AdminInfo.create({ message });
-        const safeUser = newUser.toObject();
-        delete safeUser.password;
-        res.status(201).json(safeUser);
-    } catch (error) {
-        res.status(500).json({ message: 'Internal server error' });
+  try {
+    const { name, email, password, phone, role, managerId } = req.body;
+ 
+    // 1. All three must be real text (this also stops tricks like email: { "$ne": null })
+    const isText = (value) => typeof value === "string" && value.trim() !== "";
+    if (!isText(name) || !isText(email) || !isText(password)) {
+      return res.status(400).json({ message: "Name, email, and password are required" });
     }
-}
+ 
+    // 2. Clean the values: the same email in capital letters must not count as a new user
+    const cleanName = name.trim();
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPhone = phone ? String(phone).trim() : undefined;
+ 
+    if (!EMAIL_REGEX.test(cleanEmail)) {
+      return res.status(400).json({ message: "Please enter a valid email address" });
+    }
+ 
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      return res
+        .status(400)
+        .json({ message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
+    }
+ 
+    // 3. The role comes from the user, so never trust it. Anything unknown becomes "worker".
+    const userRole = ALLOWED_ROLES.includes(role) ? role : "worker";
+ 
+    // 4. Is this email already used?
+    const isUserExists = await User.findOne({ email: cleanEmail });
+    if (isUserExists) {
+      return res.status(409).json({ message: "User already exists" });
+    }
+ 
+    // 5. A worker can join a manager's team. The manager must really exist AND be a manager.
+    let manager = null;
+    if (userRole === "worker" && managerId) {
+      const isValidId = typeof managerId === "string" && mongoose.isValidObjectId(managerId);
+      if (!isValidId) {
+        return res.status(400).json({ message: "Invalid manager ID" });
+      }
+ 
+      manager = await User.findOne({ _id: managerId, role: "manager" });
+      if (!manager) {
+        return res.status(400).json({ message: "Manager not found" });
+      }
+    }
+ 
+    // 6. Create the user
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = await User.create({
+      name: cleanName,
+      email: cleanEmail,
+      phone: cleanPhone,
+      role: userRole,
+      managerId: manager ? manager._id : null,
+      password: hashedPassword,
+    });
+ 
+    // 7. Log in right away
+    const token = generateToken(newUser);
+    res.cookie("token", token, cookieOptions);
+ 
+    // 8. Write the admin activity log. If this fails, the registration is still OK.
+    try {
+      await AdminInfo.create({ message: `New user registered with email: ${cleanEmail}` });
+    } catch (logError) {
+      console.error("Could not save the admin log:", logError.message);
+    }
+ 
+    // 9. Send the user back, without the password
+    const safeUser = newUser.toObject();
+    delete safeUser.password;
+ 
+    return res.status(201).json(safeUser);
+  } catch (error) {
+    // Two people registered with the same email at the same moment (the unique index stops the 2nd)
+    if (error?.code === 11000) {
+      return res.status(409).json({ message: "User already exists" });
+    }
+ 
+    console.error("Register user error:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
 
 export const loginUser = async (req, res) => {
     const { email, password } = req.body;
@@ -86,6 +147,19 @@ export const getAllUsers = async (req, res) => {
     try {
         const users = await User.find().select('name email phone hourlyRate avatar role createdAt updatedAt isVerified');
         res.status(200).json(users);
+    } catch (error) {
+        res.status(500).json({ message: 'Internal server error' });
+    }
+}
+
+export const getMyWorkers = async (req, res) => {
+    try {
+        const user = req.user;
+        if (!user || user.role !== 'manager') {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+        const workers = await User.find({ role:'worker', managerId: user.id }).select('name email phone hourlyRate avatar role createdAt updatedAt isVerified');
+        res.status(200).json(workers);
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
     }

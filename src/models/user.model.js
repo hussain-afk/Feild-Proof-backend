@@ -21,7 +21,7 @@ const userSchema = new mongoose.Schema(
         },
         role: {
             type: String,
-            enum: ['admin', 'manager', 'worker','pending_manager'],
+            enum: ['admin', 'manager', 'worker', 'pending_manager'],
             default: 'worker',
         },
         phone: {
@@ -36,6 +36,11 @@ const userSchema = new mongoose.Schema(
         avatar: {
             type: String,
             default: '',
+        },
+        managerId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            default: null,
         },
         isVerified: {
             type: Boolean,

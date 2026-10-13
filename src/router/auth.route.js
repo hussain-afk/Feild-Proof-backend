@@ -9,7 +9,8 @@ import {
     updateUser,
     deleteUser,
     sendVerificationCode,
-    verifyEmail
+    verifyEmail,
+    getMyWorkers
 } from '../controllers/auth.controller.js';
 import authMiddleware from '../middleware/auth.middleware.js';
 import multer from 'multer';
@@ -32,6 +33,7 @@ router.post('/register', registerUser);
 router.post('/login', loginUser);
 router.get('/me', authMiddleware, getCurrentUser);
 router.get('/users', authMiddleware, getAllUsers);
+router.get('/my-workers', authMiddleware, getMyWorkers);
 router.post('/logout', authMiddleware, logoutUser);
 router.put('/update-payment/:id', authMiddleware, updatePaymentStatus);
 router.put('/update-user/:id', authMiddleware, upload.single('avatar'), updateUser);

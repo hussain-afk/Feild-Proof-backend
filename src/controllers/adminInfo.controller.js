@@ -37,7 +37,7 @@ export const updateManagerRequest = async (req, res) => {
         }
         const { status } = req.body;
         const userId = req.params.id;
-        console.log('Received request to update manager request:', { userId, status });
+        
         if (!userId || !status) {
             return res.status(400).json({ message: 'Missing required fields' });
         }
