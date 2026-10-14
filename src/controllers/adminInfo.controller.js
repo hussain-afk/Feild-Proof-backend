@@ -41,13 +41,17 @@ export const updateManagerRequest = async (req, res) => {
         if (!userId || !status) {
             return res.status(400).json({ message: 'Missing required fields' });
         }
+
         let updatedStatus = null;
         if (status === 'approved') {
             updatedStatus = 'manager';
         } else if (status === 'rejected') {
-            updatedStatus = 'worker';
+            const bannedUser = await User.findByIdAndUpdate(userId, { isBanned: true }, { returnDocument: 'after' });
+            if(!bannedUser){
+                return res.status(404).json({ message: 'User not found' });
+            }
+            return res.status(200).json({ message: 'Manager request rejected and user banned'});
         }
-
         const updatedUser = await User.findByIdAndUpdate(userId, { role: updatedStatus }, { returnDocument: 'after' });
         if (!updatedUser) {
             return res.status(404).json({ message: 'User not found' });

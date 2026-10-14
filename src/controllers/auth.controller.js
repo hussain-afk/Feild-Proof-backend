@@ -146,7 +146,7 @@ export const getAllUsers = async (req, res) => {
         return res.status(403).json({ message: 'Access denied' });
     }
     try {
-        const users = await User.find().select('name email phone hourlyRate avatar role createdAt updatedAt isVerified');
+        const users = await User.find().select('name email phone hourlyRate avatar role createdAt updatedAt isVerified isBanned');
         res.status(200).json(users);
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
@@ -260,6 +260,9 @@ export const updateByAdmin = async (req, res) => {
         }
         if(existingUser.role === 'admin' && role !== 'admin') {
             return res.status(403).json({ message: 'Cannot change role of an admin user' });
+        }
+        if(existingUser.role !== 'admin' && role === 'admin') {
+            return res.status(403).json({ message: 'Cannot promote a non-admin user to admin' });
         }
         const existingName = existingUser.name;
         const existingEmail = existingUser.email;
@@ -382,6 +385,25 @@ export const verifyEmail = async (req, res) => {
         user.emailVerificationExpires = null;
         await user.save();
         res.status(200).json({ message: 'Email verified successfully' });
+    } catch (error) {
+        res.status(500).json({ message: 'Internal server error' });
+    }
+}
+
+export const banUser = async (req, res) => {
+    try {
+        const userId = req.params.id;
+        const user = req.user;
+        if (!user || user.role !== 'admin') {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+        const bannedUser = await User.findByIdAndUpdate(userId, { isBanned: true }, { returnDocument: 'after' });
+        if (!bannedUser) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        const message = `User banned By Admin: ${user.name} with email: ${bannedUser.email}`;
+        const adminInfo = await AdminInfo.create({ message });
+        res.status(200).json({ message: 'User banned successfully' });
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
     }

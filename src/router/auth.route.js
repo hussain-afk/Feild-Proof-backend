@@ -30,15 +30,25 @@ const upload = multer({
 });
 
 router.post('/register', registerUser);
+
 router.post('/login', loginUser);
+
 router.get('/me', authMiddleware, getCurrentUser);
+
 router.get('/users', authMiddleware, getAllUsers);
+
 router.get('/my-workers', authMiddleware, getMyWorkers);
+
 router.post('/logout', authMiddleware, logoutUser);
+
 router.put('/update-payment/:id', authMiddleware, updatePaymentStatus);
+
 router.put('/update-user/:id', authMiddleware, upload.single('avatar'), updateUser);
+
 router.post('/send-verification-code', authMiddleware, sendVerificationCode);
+
 router.post('/verify-email', authMiddleware, verifyEmail);
+
 router.delete('/delete-user/:id', authMiddleware, deleteUser);
 
 export default router;

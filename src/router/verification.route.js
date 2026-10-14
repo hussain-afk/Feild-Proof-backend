@@ -18,8 +18,11 @@ const upload = multer({
 });
 
 router.post("/check-in", authMiddleware,  upload.single('image'), checkIn);
+
 router.post("/check-out", authMiddleware,  upload.single('image'), checkOut);
+
 router.get("/verifications", authMiddleware ,getAllVerifications); 
+
 router.delete("/del-verification/:id", authMiddleware, deleteVerification);
 
 export default router;
