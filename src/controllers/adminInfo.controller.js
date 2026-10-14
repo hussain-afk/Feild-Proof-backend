@@ -21,7 +21,10 @@ export const getAllManagerRequests = async (req, res) => {
         if (user.role !== 'admin') {
             return res.status(403).json({ message: 'Access denied. Only admins can view manager requests.' });
         }
-        const managerRequests = await User.find({ role: 'pending_manager' }).sort({ createdAt: -1 });
+        const managerRequests = await User.find({
+            role: 'pending_manager',
+            isBanned: { $ne: true },
+        }).sort({ createdAt: -1 });
         req.app.get("io")?.to("admins").emit("manager_requests_updated");
         return res.status(200).json(managerRequests);
     } catch (error) {
@@ -50,6 +53,7 @@ export const updateManagerRequest = async (req, res) => {
             if(!bannedUser){
                 return res.status(404).json({ message: 'User not found' });
             }
+            req.app.get("io")?.to("admins").emit("manager_requests_updated");
             return res.status(200).json({ message: 'Manager request rejected and user banned'});
         }
         const updatedUser = await User.findByIdAndUpdate(userId, { role: updatedStatus }, { returnDocument: 'after' });
