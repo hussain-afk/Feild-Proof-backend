@@ -252,7 +252,6 @@ export const checkIn = async (req, res) => {
     if (!isAssigned) {
       return res.status(403).json({ message: "This task is not assigned to you" });
     }
-
     // 4. Is worker ka is task par pehle se record hai? (baaqi workers ka record is se farq nahi padta)
     const existing = await Verification.findOne({ task: taskId, worker: workerId });
     if (existing) {
@@ -402,8 +401,8 @@ export const getAllVerifications = async (req, res) => {
   const user = req.user;
 
   try {
-    if (user.role !== "manager" && user.role !== "admin") {
-      return res.status(403).json({ message: "Access denied. Only managers or admins can view verifications." });
+    if (user.role !== "manager") {
+      return res.status(403).json({ message: "Access denied. Only managers can view verifications." });
     }
 
     // Manager sirf apne banaye hue tasks ki verifications dekhe; admin sab dekhe

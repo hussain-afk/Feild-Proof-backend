@@ -142,7 +142,7 @@ export const getCurrentUser = async (req, res) => {
 
 export const getAllUsers = async (req, res) => {
     const user = req.user;
-    if (!user || user.role !== 'manager' && user.role !== 'admin') {
+    if (!user && user.role !== 'admin') {
         return res.status(403).json({ message: 'Access denied' });
     }
     try {
