@@ -56,6 +56,12 @@ function getDistanceInMeters(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+const canReview = async (user, verification) => {
+  if (user.role !== "manager") return false;
+  const task = await Task.findById(verification.task).select("createdBy");
+  return Boolean(task) && String(task.createdBy) === String(user._id || user.id);
+};
+
 // Task me asli site location hai ya nahi. (0, 0) ko "nahi" maante hain.
 function taskHasLocation(task) {
   const loc = task.siteLocation;
@@ -219,7 +225,7 @@ function handleDuplicateKey(error, res) {
   // Warna model me "task" par akeli unique index hai (file ke upar wala comment dekho)
   console.error(
     "Verification model me 'task' par unique index hai, isliye doosra worker check-in nahi kar pa raha. " +
-      "Fix: verificationSchema.index({ task: 1, worker: 1 }, { unique: true }) rakho aur Verification.syncIndexes() chalao."
+    "Fix: verificationSchema.index({ task: 1, worker: 1 }, { unique: true }) rakho aur Verification.syncIndexes() chalao."
   );
   return res.status(500).json({ message: "Server setup problem. Please contact the admin." });
 }
@@ -480,20 +486,23 @@ export const deleteVerification = async (req, res) => {
 
 export const onVerificationApproved = async (req, res) => {
   try {
-    const  verificationId = req.params.id;
+    const verificationId = req.params.id;
     console.log("Approving verification with ID:", verificationId);
     if (!verificationId) {
       return res.status(400).json({ message: "Verification ID is required" });
     }
     const loggedInUser = req.user;
     const verification = await Verification.findById(verificationId).populate("task");
-    if(!loggedInUser) {
+    if (!loggedInUser) {
       return res.status(404).json({ message: "User not found" });
     }
-    if(!verification) {
+    if (!verification) {
       return res.status(404).json({ message: "Verification not found" });
     }
-    if(!verification.task){
+    if (!(await canReview(req.user, verification))) {
+      return res.status(403).json({ message: "You cannot review this verification" });
+    }
+    if (!verification.task) {
       return res.status(404).json({ message: "Task not found for this verification" });
     }
     const updateTaskStatus = await Task.findByIdAndUpdate(verification.task._id, { status: "approved" }, { returnDocument: "after" });
@@ -510,7 +519,7 @@ export const onVerificationApproved = async (req, res) => {
     res.status(200).json({ message: "Verification approved and task status updated to approved" });
 
     const deletedVerification = await Verification.findByIdAndDelete(verificationId);
-    if(!deletedVerification) {
+    if (!deletedVerification) {
       return res.status(404).json({ message: "Verification not found for deletion" });
     }
     // socket notification for task status update
@@ -539,13 +548,13 @@ export const onVerificationRejected = async (req, res) => {
     }
     const loggedInUser = req.user;
     const verification = await Verification.findById(verificationId).populate("task");
-    if(!loggedInUser) {
+    if (!loggedInUser) {
       return res.status(404).json({ message: "User not found" });
     }
-    if(!verification) {
+    if (!verification) {
       return res.status(404).json({ message: "Verification not found" });
     }
-    if(!verification.task){
+    if (!verification.task) {
       return res.status(404).json({ message: "Task not found for this verification" });
     }
     const updateTaskStatus = await Task.findByIdAndUpdate(verification.task._id, { status: "rejected" }, { returnDocument: "after" });
@@ -558,7 +567,7 @@ export const onVerificationRejected = async (req, res) => {
     await rejectedTask.save();
     // console.log("Rejected task created:", rejectedTask);
     const deletedVerification = await Verification.findByIdAndDelete(verificationId);
-    if(!deletedVerification) {
+    if (!deletedVerification) {
       return res.status(404).json({ message: "Verification not found for deletion" });
     }
     // socket notification for task status update
