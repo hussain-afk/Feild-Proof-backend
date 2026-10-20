@@ -39,7 +39,7 @@ const taskSchema = new mongoose.Schema(
         },
         status: {
             type: String,
-            enum: ['pending', 'in-progress', 'completed', 'cancelled'],
+            enum: ['pending', 'in-progress', 'completed', 'cancelled', 'overdue', 'approved', 'rejected'],
             default: 'pending',
         },
         dueDate: {

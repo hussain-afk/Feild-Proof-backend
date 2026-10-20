@@ -1,6 +1,6 @@
 import express from 'express';
 import authMiddleware from '../middleware/auth.middleware.js';
-import { checkIn, checkOut, deleteVerification, getAllVerifications } from '../controllers/verification.controller.js';
+import { checkIn, checkOut, deleteVerification, getAllVerifications, onVerificationApproved, onVerificationRejected, getMyApprovedTasks, getMyRejectedTasks } from '../controllers/verification.controller.js';
 import multer from 'multer';
 
 const router = express.Router();
@@ -21,7 +21,15 @@ router.post("/check-in", authMiddleware,  upload.single('image'), checkIn);
 
 router.post("/check-out", authMiddleware,  upload.single('image'), checkOut);
 
+router.post("/approve-verification/:id", authMiddleware, onVerificationApproved);
+
+router.post("/reject-verification/:id", authMiddleware, onVerificationRejected)
+
 router.get("/verifications", authMiddleware ,getAllVerifications); 
+
+router.get("/approved-verifications", authMiddleware, getMyApprovedTasks);
+
+router.get("/rejected-verifications", authMiddleware, getMyRejectedTasks);
 
 router.delete("/del-verification/:id", authMiddleware, deleteVerification);
 

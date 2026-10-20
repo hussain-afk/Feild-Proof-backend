@@ -3,6 +3,8 @@ import Verification from "../models/verification.model.js";
 import uploadImage from "../services/uploadImage.service.js";
 import User from "../models/user.model.js";
 import adminInfo from "../models/adminInfo.model.js";
+import ApprovedTask from "../models/approvedTasks.model.js";
+import RejectedTask from "../models/rejectedTasks.model.js";
 
 /*
  * ZAROORI (kai workers ke liye): verification.model.js me ye hona chahiye
@@ -469,5 +471,195 @@ export const deleteVerification = async (req, res) => {
   } catch (error) {
     console.error("Verification delete error:", error);
     return res.status(500).json({ message: "Error deleting verification" });
+  }
+};
+
+/* ------------------------------------------------------------------ */
+/* On Approve                                               */
+/* ------------------------------------------------------------------ */
+
+export const onVerificationApproved = async (req, res) => {
+  try {
+    const  verificationId = req.params.id;
+    console.log("Approving verification with ID:", verificationId);
+    if (!verificationId) {
+      return res.status(400).json({ message: "Verification ID is required" });
+    }
+    const loggedInUser = req.user;
+    const verification = await Verification.findById(verificationId).populate("task");
+    if(!loggedInUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    if(!verification) {
+      return res.status(404).json({ message: "Verification not found" });
+    }
+    if(!verification.task){
+      return res.status(404).json({ message: "Task not found for this verification" });
+    }
+    const updateTaskStatus = await Task.findByIdAndUpdate(verification.task._id, { status: "approved" }, { returnDocument: "after" });
+    const approvedTask = new ApprovedTask({
+      worker: verification.worker._id,
+      approvedBy: loggedInUser.id,
+      task: verification.task._id,
+      message: `Task "${verification.task.title}" approved by ${loggedInUser.name} (${loggedInUser.role}) on ${new Date().toLocaleString()}.`,
+    });
+    await approvedTask.save();
+
+    console.log("Approved task created:", approvedTask);
+    // console.log("Task status updated to approved:", updateTaskStatus);
+    res.status(200).json({ message: "Verification approved and task status updated to approved" });
+
+    const deletedVerification = await Verification.findByIdAndDelete(verificationId);
+    if(!deletedVerification) {
+      return res.status(404).json({ message: "Verification not found for deletion" });
+    }
+    // socket notification for task status update
+    notifyChange({ io: req.app.get("io"), task: updateTaskStatus, workerId: String(verification.worker), myProgress: "not_started" });
+  } catch (error) {
+    console.error("Error approving verification:", error);
+    res.status(500).json({ message: "Error approving verification" });
+  }
+};
+
+/* ------------------------------------------------------------------ */
+/* On Reject                                           */
+/* ------------------------------------------------------------------ */
+
+export const onVerificationRejected = async (req, res) => {
+  try {
+    const verificationId = req.params.id;
+    // console.log(req.body);
+    const reason = req.body?.reason;
+    // console.log("Rejecting verification with ID:", verificationId, "Reason:", reason);
+    if (!verificationId) {
+      return res.status(400).json({ message: "Verification ID is required" });
+    }
+    if (!reason || reason.trim() === "") {
+      return res.status(400).json({ message: "Rejection reason is required" });
+    }
+    const loggedInUser = req.user;
+    const verification = await Verification.findById(verificationId).populate("task");
+    if(!loggedInUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    if(!verification) {
+      return res.status(404).json({ message: "Verification not found" });
+    }
+    if(!verification.task){
+      return res.status(404).json({ message: "Task not found for this verification" });
+    }
+    const updateTaskStatus = await Task.findByIdAndUpdate(verification.task._id, { status: "rejected" }, { returnDocument: "after" });
+    const rejectedTask = new RejectedTask({
+      worker: verification.worker._id,
+      rejectedBy: loggedInUser.id,
+      task: verification.task._id,
+      message: `Task "${verification.task.title}" rejected by ${loggedInUser.name} (${loggedInUser.role}) on ${new Date().toLocaleString()}. Reason: ${reason || "No reason provided"}`,
+    });
+    await rejectedTask.save();
+    // console.log("Rejected task created:", rejectedTask);
+    const deletedVerification = await Verification.findByIdAndDelete(verificationId);
+    if(!deletedVerification) {
+      return res.status(404).json({ message: "Verification not found for deletion" });
+    }
+    // socket notification for task status update
+    notifyChange({ io: req.app.get("io"), task: verification.task, workerId: String(verification.worker), myProgress: "not_started" });
+    res.status(200).json({ message: "Verification rejected and task status updated to rejected" });
+  } catch (error) {
+    console.error("Error rejecting verification:", error);
+    res.status(500).json({ message: "Error rejecting verification" });
+  }
+};
+
+/* ------------------------------------------------------------------ */
+/* GET ALL APPROVED TASKS                                        */
+/* ------------------------------------------------------------------ */
+
+export const getMyApprovedTasks = async (req, res) => {
+  try {
+    const userId = req.user?._id || req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "User not authenticated",
+      });
+    }
+
+    let approvedTasks;
+
+    if (req.user.role === "worker") {
+      // Worker gets only their own approved tasks
+      approvedTasks = await ApprovedTask.find({
+        worker: userId,
+      })
+        .populate("task", "title siteLocation status")
+        .populate("approvedBy", "name email")
+        .sort({ createdAt: -1 });
+    } else if (req.user.role === "manager") {
+      approvedTasks = await ApprovedTask.find({
+        approvedBy: userId,
+      })
+        .populate("task", "title siteLocation status")
+        .populate("approvedBy", "name email")
+        .sort({ createdAt: -1 });
+    } else {
+      return res.status(403).json({
+        message: "Access denied",
+      });
+    }
+
+    return res.status(200).json(approvedTasks);
+  } catch (error) {
+    console.error("Error fetching approved tasks:", error);
+
+    return res.status(500).json({
+      message: "Error fetching approved tasks",
+    });
+  }
+};
+
+/* ------------------------------------------------------------------ */
+/* GET ALL REJECTED TASKS                                        */
+/* ------------------------------------------------------------------ */
+
+export const getMyRejectedTasks = async (req, res) => {
+  try {
+    const userId = req.user?._id || req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "User not authenticated",
+      });
+    }
+
+    let rejectedTasks;
+
+    if (req.user.role === "worker") {
+      // Worker gets only their own approved tasks
+      rejectedTasks = await RejectedTask.find({
+        worker: userId,
+      })
+        .populate("task", "title siteLocation status")
+        .populate("rejectedBy", "name email")
+        .sort({ createdAt: -1 });
+    } else if (req.user.role === "manager") {
+      rejectedTasks = await RejectedTask.find({
+        rejectedBy: userId,
+      })
+        .populate("task", "title siteLocation status")
+        .populate("rejectedBy", "name email")
+        .sort({ createdAt: -1 });
+    } else {
+      return res.status(403).json({
+        message: "Access denied",
+      });
+    }
+
+    return res.status(200).json(rejectedTasks);
+  } catch (error) {
+    console.error("Error fetching rejected tasks:", error);
+
+    return res.status(500).json({
+      message: "Error fetching rejected tasks",
+    });
   }
 };
