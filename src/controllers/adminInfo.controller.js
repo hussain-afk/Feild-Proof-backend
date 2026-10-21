@@ -32,6 +32,7 @@ export const getAllManagerRequests = async (req, res) => {
         return res.status(500).json({ message: 'Error fetching manager requests' });
     }
 }
+
 export const updateManagerRequest = async (req, res) => {
     try {
         const user = req.user;

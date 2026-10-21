@@ -551,6 +551,9 @@ export const onVerificationRejected = async (req, res) => {
     if (!loggedInUser) {
       return res.status(404).json({ message: "User not found" });
     }
+    if (!(await canReview(loggedInUser, verification))) {
+      return res.status(403).json({ message: "You cannot review this verification" });
+    }
     if (!verification) {
       return res.status(404).json({ message: "Verification not found" });
     }

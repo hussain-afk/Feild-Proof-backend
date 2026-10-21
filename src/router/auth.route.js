@@ -14,6 +14,8 @@ import {
 } from '../controllers/auth.controller.js';
 import authMiddleware from '../middleware/auth.middleware.js';
 import checkUser from '../middleware/checkBannedUser.middleware.js';
+import checkAdmin from '../middleware/adminCheck.middleware.js';
+import checkManager from '../middleware/managerCheck.middleware.js';
 import multer from 'multer';
 
 const router = express.Router();
@@ -34,22 +36,22 @@ router.post('/register', registerUser);
 
 router.post('/login', loginUser);
 
-router.get('/me', authMiddleware, getCurrentUser);
+router.get('/me', authMiddleware, checkUser, getCurrentUser);
 
-router.get('/users', authMiddleware, getAllUsers);
+router.get('/users', authMiddleware, checkAdmin, getAllUsers);
 
-router.get('/my-workers', authMiddleware, getMyWorkers);
+router.get('/my-workers', authMiddleware, checkManager, getMyWorkers);
 
-router.post('/logout', authMiddleware, logoutUser);
+router.post('/logout', authMiddleware, checkUser, logoutUser);
 
-router.put('/update-payment/:id', authMiddleware, updatePaymentStatus);
+router.put('/update-payment/:id', authMiddleware, checkUser, updatePaymentStatus);
 
-router.put('/update-user/:id', authMiddleware, upload.single('avatar'), updateUser);
+router.put('/update-user/:id', authMiddleware, checkUser, upload.single('avatar'), updateUser);
 
-router.post('/send-verification-code', authMiddleware, sendVerificationCode);
+router.post('/send-verification-code', authMiddleware, checkUser, sendVerificationCode);
 
-router.post('/verify-email', authMiddleware, verifyEmail);
+router.post('/verify-email', authMiddleware, checkUser, verifyEmail);
 
-router.delete('/delete-user/:id', authMiddleware, deleteUser);
+router.delete('/delete-user/:id', authMiddleware, checkAdmin, deleteUser);
 
 export default router;
