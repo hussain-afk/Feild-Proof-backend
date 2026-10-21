@@ -13,6 +13,7 @@ import {
     getMyWorkers
 } from '../controllers/auth.controller.js';
 import authMiddleware from '../middleware/auth.middleware.js';
+import checkUser from '../middleware/checkBannedUser.middleware.js';
 import multer from 'multer';
 
 const router = express.Router();
