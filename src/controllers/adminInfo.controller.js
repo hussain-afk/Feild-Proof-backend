@@ -25,7 +25,6 @@ export const getAllManagerRequests = async (req, res) => {
             role: 'pending_manager',
             isBanned: { $ne: true },
         }).sort({ createdAt: -1 });
-        req.app.get("io")?.to("admins").emit("manager_requests_updated");
         return res.status(200).json(managerRequests);
     } catch (error) {
         console.error('Manager requests fetch error:', error);
