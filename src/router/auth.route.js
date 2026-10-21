@@ -38,9 +38,9 @@ router.post('/login', loginUser);
 
 router.get('/me', authMiddleware, checkUser, getCurrentUser);
 
-router.get('/users', authMiddleware, checkAdmin, getAllUsers);
+router.get('/users', authMiddleware, checkUser, checkAdmin, getAllUsers);
 
-router.get('/my-workers', authMiddleware, checkManager, getMyWorkers);
+router.get('/my-workers', authMiddleware, checkUser, checkManager, getMyWorkers);
 
 router.post('/logout', authMiddleware, checkUser, logoutUser);
 
@@ -52,6 +52,6 @@ router.post('/send-verification-code', authMiddleware, checkUser, sendVerificati
 
 router.post('/verify-email', authMiddleware, checkUser, verifyEmail);
 
-router.delete('/delete-user/:id', authMiddleware, checkAdmin, deleteUser);
+router.delete('/delete-user/:id', authMiddleware, checkUser, checkAdmin, deleteUser);
 
 export default router;
