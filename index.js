@@ -13,6 +13,7 @@ import verificationRoutes from './src/router/verification.route.js';
 import adminRoutes from './src/router/admin.route.js';
 import User from './src/models/user.model.js'; // <-- apne User model ka sahi path likho
 import cors from 'cors';
+import maintenanceRoutes from './src/router/maintenance.route.js';
 
 const app = express();
 
@@ -103,6 +104,8 @@ app.get('/health', (req, res) => {
 });
 
 // Routes
+app.use('/api/system', maintenanceRoutes);
+
 app.use('/api/auth', authRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/notifications', notificationRoutes);
