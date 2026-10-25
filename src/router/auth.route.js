@@ -10,7 +10,8 @@ import {
     deleteUser,
     sendVerificationCode,
     verifyEmail,
-    getMyWorkers
+    getMyWorkers,
+    getAvalaibleWorkers,
 } from '../controllers/auth.controller.js';
 import authMiddleware from '../middleware/auth.middleware.js';
 import checkUser from '../middleware/checkBannedUser.middleware.js';
@@ -41,6 +42,8 @@ router.get('/me', authMiddleware, checkUser, getCurrentUser);
 router.get('/users', authMiddleware, checkUser, checkAdmin, getAllUsers);
 
 router.get('/my-workers', authMiddleware, checkUser, checkManager, getMyWorkers);
+
+router.get('/available-workers', authMiddleware, checkUser, checkManager, getAvalaibleWorkers);
 
 router.post('/logout', authMiddleware, checkUser, logoutUser);
 

@@ -15,94 +15,85 @@ const cookieOptions = {
 };
 
 const ALLOWED_ROLES = ["worker", "pending_manager"];
- 
+
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 6;
 
 export const registerUser = async (req, res) => {
-  try {
-    const { name, email, password, phone, role, managerId } = req.body;
- 
-    // 1. All three must be real text (this also stops tricks like email: { "$ne": null })
-    const isText = (value) => typeof value === "string" && value.trim() !== "";
-    if (!isText(name) || !isText(email) || !isText(password)) {
-      return res.status(400).json({ message: "Name, email, and password are required" });
-    }
- 
-    // 2. Clean the values: the same email in capital letters must not count as a new user
-    const cleanName = name.trim();
-    const cleanEmail = email.trim().toLowerCase();
-    const cleanPhone = phone ? String(phone).trim() : undefined;
- 
-    if (!EMAIL_REGEX.test(cleanEmail)) {
-      return res.status(400).json({ message: "Please enter a valid email address" });
-    }
- 
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      return res
-        .status(400)
-        .json({ message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
-    }
- 
-    // 3. The role comes from the user, so never trust it. Anything unknown becomes "worker".
-    const userRole = ALLOWED_ROLES.includes(role) ? role : "worker";
- 
-    // 4. Is this email already used?
-    const isUserExists = await User.findOne({ email: cleanEmail });
-    if (isUserExists) {
-      return res.status(409).json({ message: "User already exists" });
-    }
- 
-    // 5. A worker can join a manager's team. The manager must really exist AND be a manager.
-    let manager = null;
-    if (userRole === "worker" && managerId) {
-      const isValidId = typeof managerId === "string" && mongoose.isValidObjectId(managerId);
-      if (!isValidId) {
-        return res.status(400).json({ message: "Invalid manager ID" });
-      }
- 
-      manager = await User.findOne({ _id: managerId, role: "manager" });
-      if (!manager) {
-        return res.status(400).json({ message: "Manager not found" });
-      }
-    }
- 
-    // 6. Create the user
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = await User.create({
-      name: cleanName,
-      email: cleanEmail,
-      phone: cleanPhone,
-      role: userRole,
-      managerId: manager ? manager._id : null,
-      password: hashedPassword,
-    });
- 
-    // 7. Log in right away
-    const token = generateToken(newUser);
-    res.cookie("token", token, cookieOptions);
- 
-    // 8. Write the admin activity log. If this fails, the registration is still OK.
     try {
-      await AdminInfo.create({ message: `New user registered with email: ${cleanEmail}` });
-    } catch (logError) {
-      console.error("Could not save the admin log:", logError.message);
+        const { name, email, password, phone, role } = req.body;
+
+        // 1. All three must be real text
+        const isText = (value) => typeof value === "string" && value.trim() !== "";
+        if (!isText(name) || !isText(email) || !isText(password)) {
+            return res
+                .status(400)
+                .json({ message: "Name, email, and password are required" });
+        }
+
+        // 2. Clean values
+        const cleanName = name.trim();
+        const cleanEmail = email.trim().toLowerCase();
+        const cleanPhone = phone ? String(phone).trim() : undefined;
+
+        if (!EMAIL_REGEX.test(cleanEmail)) {
+            return res
+                .status(400)
+                .json({ message: "Please enter a valid email address" });
+        }
+
+        if (password.length < MIN_PASSWORD_LENGTH) {
+            return res.status(400).json({
+                message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters`,
+            });
+        }
+
+        // 3. Never trust role from client. Unknown → "worker"
+        const userRole = ALLOWED_ROLES.includes(role) ? role : "worker";
+
+        // 4. Email already used?
+        const isUserExists = await User.findOne({ email: cleanEmail });
+        if (isUserExists) {
+            return res.status(409).json({ message: "User already exists" });
+        }
+
+        // 5. Create user — no managerId from client (worker joins team later via invite)
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const newUser = await User.create({
+            name: cleanName,
+            email: cleanEmail,
+            phone: cleanPhone,
+            role: userRole,
+            managerId: null,
+            password: hashedPassword,
+        });
+
+        // 6. Log in right away
+        const token = generateToken(newUser);
+        res.cookie("token", token, cookieOptions);
+
+        // 7. Admin activity log (optional)
+        try {
+            await AdminInfo.create({
+                message: `New user registered with email: ${cleanEmail}`,
+            });
+        } catch (logError) {
+            console.error("Could not save the admin log:", logError.message);
+        }
+
+        // 8. Response without password
+        const safeUser = newUser.toObject();
+        delete safeUser.password;
+
+        return res.status(201).json(safeUser);
+    } catch (error) {
+        if (error?.code === 11000) {
+            return res.status(409).json({ message: "User already exists" });
+        }
+
+        console.error("Register user error:", error);
+        return res.status(500).json({ message: "Internal server error" });
     }
- 
-    // 9. Send the user back, without the password
-    const safeUser = newUser.toObject();
-    delete safeUser.password;
- 
-    return res.status(201).json(safeUser);
-  } catch (error) {
-    // Two people registered with the same email at the same moment (the unique index stops the 2nd)
-    if (error?.code === 11000) {
-      return res.status(409).json({ message: "User already exists" });
-    }
- 
-    console.error("Register user error:", error);
-    return res.status(500).json({ message: "Internal server error" });
-  }
 };
 
 export const loginUser = async (req, res) => {
@@ -159,7 +150,7 @@ export const getMyWorkers = async (req, res) => {
         if (!user || user.role !== 'manager') {
             return res.status(403).json({ message: 'Access denied' });
         }
-        const workers = await User.find({ role:'worker', managerId: user.id }).select('name email phone hourlyRate avatar role createdAt updatedAt isVerified');
+        const workers = await User.find({ role: 'worker', managerId: user.id }).select('name email phone hourlyRate avatar role createdAt updatedAt isVerified');
         res.status(200).json(workers);
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
@@ -258,10 +249,10 @@ export const updateByAdmin = async (req, res) => {
         if (!existingUser) {
             return res.status(404).json({ message: 'User not found' });
         }
-        if(existingUser.role === 'admin' && role !== 'admin') {
+        if (existingUser.role === 'admin' && role !== 'admin') {
             return res.status(403).json({ message: 'Cannot change role of an admin user' });
         }
-        if(existingUser.role !== 'admin' && role === 'admin') {
+        if (existingUser.role !== 'admin' && role === 'admin') {
             return res.status(403).json({ message: 'Cannot promote a non-admin user to admin' });
         }
         const existingName = existingUser.name;
@@ -292,82 +283,82 @@ export const updateByAdmin = async (req, res) => {
 }
 
 export const sendVerificationCode = async (req, res) => {
-  try {
-    // Logged-in user
-    const loggedInUser = req.user;
+    try {
+        // Logged-in user
+        const loggedInUser = req.user;
 
-    if (!loggedInUser) {
-      return res.status(401).json({
-        message: "Unauthorized",
-      });
+        if (!loggedInUser) {
+            return res.status(401).json({
+                message: "Unauthorized",
+            });
+        }
+
+        // Check role
+        if (
+            loggedInUser.role !== "admin" &&
+            loggedInUser.role !== "manager" &&
+            loggedInUser.role !== "worker"
+        ) {
+            return res.status(403).json({
+                message: "Access denied",
+            });
+        }
+
+        // Email required
+        if (!loggedInUser.email) {
+            return res.status(400).json({
+                message: "Email is required",
+            });
+        }
+
+        // Find user by email
+        const isUserExists = await User.findOne({
+            email: loggedInUser.email.trim().toLowerCase(),
+        });
+
+        if (!isUserExists) {
+            return res.status(404).json({
+                message: "User not found",
+            });
+        }
+
+        // Already verified?
+        if (isUserExists.isVerified) {
+            return res.status(400).json({
+                message: "Email is already verified",
+            });
+        }
+
+        // Generate 6-digit code
+        const verificationCode = generateVerificationCode();
+
+        // Save code to the FOUND USER
+        isUserExists.emailVerificationCode = verificationCode;
+
+        // Code expires after 10 minutes
+        isUserExists.emailVerificationExpires =
+            new Date(Date.now() + 10 * 60 * 1000);
+
+        await isUserExists.save();
+
+        // Send email
+        await sendEmail(
+            isUserExists.email,
+            verificationCode
+        );
+
+        return res.status(200).json({
+            message: "Verification code sent successfully",
+        });
+
+    } catch (error) {
+        console.error("Send verification code error:", error);
+
+        return res.status(500).json({
+            message: "Internal server error",
+            error: error.message,
+        });
     }
-
-    // Check role
-    if (
-      loggedInUser.role !== "admin" &&
-      loggedInUser.role !== "manager" &&
-      loggedInUser.role !== "worker"
-    ) {
-      return res.status(403).json({
-        message: "Access denied",
-      });
-    }
-
-    // Email required
-    if (!loggedInUser.email) {
-      return res.status(400).json({
-        message: "Email is required",
-      });
-    }
-
-    // Find user by email
-    const isUserExists = await User.findOne({
-      email: loggedInUser.email.trim().toLowerCase(),
-    });
-
-    if (!isUserExists) {
-      return res.status(404).json({
-        message: "User not found",
-      });
-    }
-
-    // Already verified?
-    if (isUserExists.isVerified) {
-      return res.status(400).json({
-        message: "Email is already verified",
-      });
-    }
-
-    // Generate 6-digit code
-    const verificationCode = generateVerificationCode();
-
-    // Save code to the FOUND USER
-    isUserExists.emailVerificationCode = verificationCode;
-
-    // Code expires after 10 minutes
-    isUserExists.emailVerificationExpires =
-      new Date(Date.now() + 10 * 60 * 1000);
-
-    await isUserExists.save();
-
-    // Send email
-    await sendEmail(
-      isUserExists.email,
-      verificationCode
-    );
-
-    return res.status(200).json({
-      message: "Verification code sent successfully",
-    });
-
-  } catch (error) {
-    console.error("Send verification code error:", error);
-
-    return res.status(500).json({
-      message: "Internal server error",
-      error: error.message,
-    });
-  }
 };
 
 export const verifyEmail = async (req, res) => {
@@ -423,6 +414,20 @@ export const deleteUser = async (req, res) => {
         const message = `User deleted By Admin: ${user.name} with email: ${deletedUser.email}`;
         const adminInfo = await AdminInfo.create({ message });
         res.status(200).json({ message: 'User deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ message: 'Internal server error' });
+    }
+}
+
+export const getAvalaibleWorkers = async (req, res) => {
+    try {
+        const loggedInUser = req.user;
+        const isManager = loggedInUser.role === "manager";
+        if (!isManager) {
+            return res.status(403).json({ message: "Access denied" });
+        }
+        const workers = await User.find({ role: "worker", managerId: null, isBanned: false }).select("name email phone hourlyRate avatar role createdAt updatedAt isVerified");
+        res.status(200).json({ workers });
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
     }

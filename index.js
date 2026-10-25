@@ -14,6 +14,7 @@ import adminRoutes from './src/router/admin.route.js';
 import User from './src/models/user.model.js'; // <-- apne User model ka sahi path likho
 import cors from 'cors';
 import maintenanceRoutes from './src/router/maintenance.route.js';
+import invitationRoutes from './src/router/invitation.route.js';
 
 const app = express();
 
@@ -111,6 +112,9 @@ app.use('/api/tasks', taskRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/verify', verificationRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/invitations', invitationRoutes);
+
+// Error Handling Middleware
 
 app.use((error, _req, res, _next) => {
   if (error?.code === 'LIMIT_FILE_SIZE' || error?.message === 'Only image uploads are allowed') {
