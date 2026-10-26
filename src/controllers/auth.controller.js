@@ -7,6 +7,8 @@ import AdminInfo from '../models/adminInfo.model.js';
 import { sendEmail } from '../services/email.service.js';
 import generateVerificationCode from '../services/codeGenerate.service.js';
 import BlackListTokens from '../models/blackListTokens.model.js';
+import { toSafeUser } from '../services/safeUser.service.js';
+import Invitation from '../models/inviteWorker.model.js';
 
 const cookieOptions = {
     httpOnly: true,
@@ -82,10 +84,7 @@ export const registerUser = async (req, res) => {
         }
 
         // 8. Response without password
-        const safeUser = newUser.toObject();
-        delete safeUser.password;
-
-        return res.status(201).json(safeUser);
+            return res.status(201).json(toSafeUser(newUser));
     } catch (error) {
         if (error?.code === 11000) {
             return res.status(409).json({ message: "User already exists" });
@@ -101,7 +100,7 @@ export const loginUser = async (req, res) => {
     if (!email || !password) {
         return res.status(400).json({ message: 'Email and password are required' });
     }
-    const isUserValid = await User.findOne({ email }).select('+password');
+    const isUserValid = await User.findOne({ email: email.trim().toLowerCase() }).select('+password');
     if (!isUserValid) {
         return res.status(401).json({ message: 'Not a valid user with this email' });
     }
@@ -109,13 +108,14 @@ export const loginUser = async (req, res) => {
     if (!isPasswordValid) {
         return res.status(401).json({ message: 'Invalid credentials' });
     }
+    if (isUserValid.isBanned) {
+        return res.status(403).json({ message: 'Access denied. User is banned.' });
+    }
     const token = generateToken(isUserValid);
     const message = `User logged in with email: ${email}`;
     res.cookie('token', token, cookieOptions);
     await AdminInfo.create({ message });
-    const safeUser = isUserValid.toObject();
-    delete safeUser.password;
-    res.status(200).json(safeUser);
+    res.status(200).json(toSafeUser(isUserValid));
 }
 
 export const getCurrentUser = async (req, res) => {
@@ -124,8 +124,8 @@ export const getCurrentUser = async (req, res) => {
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
-        const currentUser = await User.findById(user.id).select('-password');
-        res.status(200).json(currentUser);
+        const currentUser = await User.findById(user._id);
+        res.status(200).json(toSafeUser(currentUser));
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
     }
@@ -138,7 +138,7 @@ export const getAllUsers = async (req, res) => {
     }
     try {
         const users = await User.find().select('name email phone hourlyRate avatar role createdAt updatedAt isVerified isBanned');
-        res.status(200).json(users);
+        res.status(200).json(users.map(toSafeUser));
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
     }
@@ -151,7 +151,7 @@ export const getMyWorkers = async (req, res) => {
             return res.status(403).json({ message: 'Access denied' });
         }
         const workers = await User.find({ role: 'worker', managerId: user.id }).select('name email phone hourlyRate avatar role createdAt updatedAt isVerified');
-        res.status(200).json(workers);
+        res.status(200).json(workers.map(toSafeUser));
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
     }
@@ -194,7 +194,10 @@ export const updatePaymentStatus = async (req, res) => {
             }
         }, { returnDocument: 'after' });
         if (!user) return res.status(404).json({ message: 'User not found' });
-        res.status(200).json(user);
+        res.status(200).json({
+            ...toSafeUser(user),
+            paymentMethod: user.paymentMethod,
+        });
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
     }
@@ -231,7 +234,7 @@ export const updateUser = async (req, res) => {
         if (!updatedUser) return res.status(404).json({ message: 'User not found' });
         const message = `User updated with email: ${updatedUser.email}`;
         const adminInfo = await AdminInfo.create({ message });
-        res.status(200).json(updatedUser);
+        res.status(200).json(toSafeUser(updatedUser));
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
     }
@@ -276,7 +279,7 @@ export const updateByAdmin = async (req, res) => {
         });
         const message = `User updated by admin with email: ${updatedUser.email}`;
         const adminInfo = await AdminInfo.create({ message });
-        res.status(200).json(updatedUser);
+        res.status(200).json(toSafeUser(updatedUser));
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
     }
@@ -363,10 +366,13 @@ export const sendVerificationCode = async (req, res) => {
 
 export const verifyEmail = async (req, res) => {
     try {
-        const { email, code } = req.body;
-        const user = await User.findOne({ email });
+        const { code } = req.body;
+        const user = await User.findById(req.user._id);
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
+        }
+        if (!user.emailVerificationExpires || user.emailVerificationExpires <= new Date()) {
+            return res.status(400).json({ message: 'Verification code has expired' });
         }
         if (user.emailVerificationCode !== code) {
             return res.status(400).json({ message: 'Invalid verification code' });
@@ -394,6 +400,7 @@ export const banUser = async (req, res) => {
         }
         const message = `User banned By Admin: ${user.name} with email: ${bannedUser.email}`;
         const adminInfo = await AdminInfo.create({ message });
+        req.app.get('disconnectUserSockets')?.(bannedUser._id);
         res.status(200).json({ message: 'User banned successfully' });
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
@@ -411,6 +418,8 @@ export const deleteUser = async (req, res) => {
         if (!deletedUser) {
             return res.status(404).json({ message: 'User not found' });
         }
+        await Invitation.deleteMany({ $or: [{ managerId: userId }, { workerId: userId }] });
+        req.app.get('disconnectUserSockets')?.(deletedUser._id);
         const message = `User deleted By Admin: ${user.name} with email: ${deletedUser.email}`;
         const adminInfo = await AdminInfo.create({ message });
         res.status(200).json({ message: 'User deleted successfully' });

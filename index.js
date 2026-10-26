@@ -15,8 +15,10 @@ import User from './src/models/user.model.js'; // <-- apne User model ka sahi pa
 import cors from 'cors';
 import maintenanceRoutes from './src/router/maintenance.route.js';
 import invitationRoutes from './src/router/invitation.route.js';
+import { apiLimiter } from './src/middleware/rateLimiter.js';
 
 const app = express();
+app.set('trust proxy', 1);
 
 // Render par PORT dynamically assign hota hai, isliye fallback rakhein
 const PORT = process.env.PORT || envConfig.port || 4000;
@@ -35,9 +37,10 @@ app.use((req, res, next) => {
   }
   next();
 });
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(cookieParser());
+app.use('/api', apiLimiter);
 
 // HTTP Server & Socket.io Setup
 const server = http.createServer(app);
@@ -68,8 +71,9 @@ io.use(async (socket, next) => {
     const decoded = jwt.verify(token, envConfig.jwtSecret);
     const userId = decoded.userId || decoded.id || decoded._id; // jo bhi aap jwt.sign me daalte ho
 
-    const user = await User.findById(userId).select('role');
+    const user = await User.findById(userId).select('_id role isBanned');
     if (!user) return next(new Error('User not found'));
+    if (user.isBanned) return next(new Error('User is banned'));
 
     socket.data.userId = String(user._id);
     socket.data.role = user.role;
@@ -77,6 +81,11 @@ io.use(async (socket, next) => {
   } catch (err) {
     next(new Error('Invalid token'));
   }
+});
+
+// Ban events can immediately end already-open connections.
+app.set('disconnectUserSockets', (userId) => {
+  io.in(String(userId)).disconnectSockets(true);
 });
 
 // Socket.io Connection Logic
@@ -94,6 +103,7 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log('User disconnected:', userId);
   });
+
 });
 
 // Database Connection

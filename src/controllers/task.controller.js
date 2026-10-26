@@ -20,6 +20,13 @@ const notifyAdmins = (io) => {
     if (io) io.to('admins').emit('admin_info_updated');
 };
 
+const getPagination = (query) => {
+    if (query.page === undefined && query.limit === undefined) return null;
+    const page = Math.max(Number.parseInt(query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(Number.parseInt(query.limit, 10) || 20, 1), 50);
+    return { page, limit, skip: (page - 1) * limit };
+};
+
 // Is file me pehle se jo imports hain wo rehne do, bas ye ek line add karo:
 // import mongoose from "mongoose";
 //
@@ -181,11 +188,13 @@ export const createTask = async (req, res) => {
 export const getMyTasks = async (req, res) => {
   try {
     const workerId = req.user._id || req.user.id;
- 
-    const tasks = await Task.find({ assignedWorker: workerId })
+    const pagination = getPagination(req.query);
+    let taskQuery = Task.find({ assignedWorker: workerId })
       .populate("assignedWorker", "name email role")
       .populate("createdBy", "name email")
       .sort({ createdAt: -1 });
+    if (pagination) taskQuery = taskQuery.skip(pagination.skip).limit(pagination.limit);
+    const tasks = await taskQuery;
  
     // Is worker ke saare check-in/out records (ek hi query me)
     const records = await Verification.find({
@@ -222,7 +231,7 @@ export const getTaskById = async (req, res) => {
         const accessFilter = user.role === 'manager'
             ? { _id: id, createdBy: user.id || user._id }
             : { _id: id, assignedWorker: user.id || user._id };
-        const task = await Task.findOne(accessFilter).populate('assignedWorker');
+        const task = await Task.findOne(accessFilter).populate('assignedWorker', 'name email avatar role');
         if (!task) {
             return res.status(404).json({ message: 'Task not found' });
         }
@@ -238,9 +247,12 @@ export const getAllTasks = async (req, res) => {
         if (user.role !== 'manager' && user.role !== 'admin') {
             return res.status(403).json({ message: 'Access denied' });
         }
-        const tasks = await Task.find({
+        const pagination = getPagination(req.query);
+        let taskQuery = Task.find({
             ...(user.role === 'manager' ? { createdBy: user.id || user._id } : {})
-        }).populate('assignedWorker');
+        }).populate('assignedWorker', 'name email avatar role').sort({ createdAt: -1 });
+        if (pagination) taskQuery = taskQuery.skip(pagination.skip).limit(pagination.limit);
+        const tasks = await taskQuery;
         res.status(200).json(tasks);
     } catch (error) {
         res.status(500).json({ message: 'Error fetching tasks' });
@@ -267,6 +279,8 @@ export const deleteTask = async (req, res) => {
         }
 
         await task.deleteOne();
+        await Verification.deleteMany({ task: task._id });
+        await Notification.deleteMany({ task: task._id });
 
         await AdminInfo.create({
             message: `Task "${task.title}" deleted by ${user.name} (${user.role})`,

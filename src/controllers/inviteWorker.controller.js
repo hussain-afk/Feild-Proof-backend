@@ -150,32 +150,13 @@ export const onInviteAccepted = async (req, res) => {
         .json({ message: "Valid invitationId is required" });
     }
 
-    const invitation = await Invitation.findById(invitationId);
+    const invitation = await Invitation.findOne({
+      _id: invitationId,
+      workerId: loggedInUserId,
+      status: "pending",
+    });
     if (!invitation) {
       return res.status(404).json({ message: "Invitation not found" });
-    }
-
-    if (String(invitation.workerId) !== String(loggedInUserId)) {
-      return res
-        .status(403)
-        .json({ message: "This invitation is not for you" });
-    }
-
-    if (invitation.status !== "pending") {
-      return res.status(400).json({
-        message: `Invitation already ${invitation.status}`,
-      });
-    }
-
-    const worker = await User.findById(loggedInUserId);
-    if (!worker) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    if (worker.managerId) {
-      return res.status(400).json({
-        message: "You already belong to a manager",
-      });
     }
 
     const manager = await User.findOne({
@@ -188,11 +169,27 @@ export const onInviteAccepted = async (req, res) => {
         .json({ message: "Manager no longer available" });
     }
 
-    worker.managerId = invitation.managerId;
-    await worker.save();
+    const worker = await User.findOneAndUpdate(
+      { _id: loggedInUserId, role: "worker", managerId: null },
+      { managerId: invitation.managerId },
+      { new: true }
+    );
+    if (!worker) {
+      return res.status(400).json({ message: "You already belong to a manager" });
+    }
 
-    invitation.status = "accepted";
-    await invitation.save();
+    const acceptedInvitation = await Invitation.findOneAndUpdate(
+      { _id: invitation._id, workerId: loggedInUserId, status: "pending" },
+      { status: "accepted" },
+      { new: true }
+    );
+    if (!acceptedInvitation) {
+      await User.findOneAndUpdate(
+        { _id: loggedInUserId, managerId: invitation.managerId },
+        { managerId: null }
+      );
+      return res.status(400).json({ message: "Invitation is no longer pending" });
+    }
 
     await Invitation.updateMany(
       {

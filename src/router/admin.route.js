@@ -3,8 +3,11 @@ import authMiddleware from "../middleware/auth.middleware.js";
 import isAdmin from "../middleware/adminCheck.middleware.js";
 import { getAdminInfos, getAllManagerRequests, updateManagerRequest } from "../controllers/adminInfo.controller.js";
 import { updateByAdmin, deleteUser, banUser } from '../controllers/auth.controller.js';
+import { adminLimiter } from "../middleware/rateLimiter.js";
 
 const router = express.Router();
+
+router.use(adminLimiter);
 // Admin routes
 router.get("/admin-info", authMiddleware, isAdmin, getAdminInfos);
 

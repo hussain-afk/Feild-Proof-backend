@@ -2,10 +2,15 @@ import Notification from '../models/notification.model.js';
 
 export const getMyNotifications = async (req, res) => {
   try {
-    const notifications = await Notification.find({ recipient: req.user.id })
+    const hasPagination = req.query.page !== undefined || req.query.limit !== undefined;
+    const page = Math.max(Number.parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 20, 1), 50);
+    let notificationQuery = Notification.find({ recipient: req.user.id })
       .populate('sender', 'name email')
       .populate('task', 'title status siteLocation')
       .sort({ createdAt: -1 });
+    if (hasPagination) notificationQuery = notificationQuery.skip((page - 1) * limit).limit(limit);
+    const notifications = await notificationQuery;
 
     res.status(200).json(notifications);
   } catch (error) {

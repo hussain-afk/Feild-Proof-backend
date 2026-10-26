@@ -58,7 +58,7 @@ function getDistanceInMeters(lat1, lon1, lat2, lon2) {
 
 const canReview = async (user, verification) => {
   if (user.role !== "manager") return false;
-  const task = await Task.findById(verification.task).select("createdBy");
+  const task = await Task.findById(verification.task._id || verification.task).select("createdBy");
   return Boolean(task) && String(task.createdBy) === String(user._id || user.id);
 };
 
@@ -420,9 +420,16 @@ export const getAllVerifications = async (req, res) => {
       filter.task = { $in: myTaskIds };
     }
 
-    const verifications = await Verification.find(filter)
+    const hasPagination = req.query.page !== undefined || req.query.limit !== undefined;
+    const page = Math.max(Number.parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 20, 1), 50);
+    let verificationQuery = Verification.find(filter)
       .populate("task", "title siteLocation status")
       .populate("worker", "name email");
+    if (hasPagination) {
+      verificationQuery = verificationQuery.skip((page - 1) * limit).limit(limit);
+    }
+    const verifications = await verificationQuery;
 
     return res.status(200).json(verifications);
   } catch (error) {
@@ -506,6 +513,9 @@ export const onVerificationApproved = async (req, res) => {
       return res.status(404).json({ message: "Task not found for this verification" });
     }
     const updateTaskStatus = await Task.findByIdAndUpdate(verification.task._id, { status: "approved" }, { returnDocument: "after" });
+    if (!updateTaskStatus) {
+      return res.status(404).json({ message: "Task not found for this verification" });
+    }
     const approvedTask = new ApprovedTask({
       worker: verification.worker._id,
       approvedBy: loggedInUser.id,
@@ -513,17 +523,13 @@ export const onVerificationApproved = async (req, res) => {
       message: `Task "${verification.task.title}" approved by ${loggedInUser.name} (${loggedInUser.role}) on ${new Date().toLocaleString()}.`,
     });
     await approvedTask.save();
-
-    console.log("Approved task created:", approvedTask);
-    // console.log("Task status updated to approved:", updateTaskStatus);
-    res.status(200).json({ message: "Verification approved and task status updated to approved" });
-
     const deletedVerification = await Verification.findByIdAndDelete(verificationId);
     if (!deletedVerification) {
       return res.status(404).json({ message: "Verification not found for deletion" });
     }
     // socket notification for task status update
     notifyChange({ io: req.app.get("io"), task: updateTaskStatus, workerId: String(verification.worker), myProgress: "not_started" });
+    res.status(200).json({ message: "Verification approved and task status updated to approved" });
   } catch (error) {
     console.error("Error approving verification:", error);
     res.status(500).json({ message: "Error approving verification" });
@@ -551,16 +557,19 @@ export const onVerificationRejected = async (req, res) => {
     if (!loggedInUser) {
       return res.status(404).json({ message: "User not found" });
     }
-    if (!(await canReview(loggedInUser, verification))) {
-      return res.status(403).json({ message: "You cannot review this verification" });
-    }
     if (!verification) {
       return res.status(404).json({ message: "Verification not found" });
+    }
+    if (!(await canReview(loggedInUser, verification))) {
+      return res.status(403).json({ message: "You cannot review this verification" });
     }
     if (!verification.task) {
       return res.status(404).json({ message: "Task not found for this verification" });
     }
     const updateTaskStatus = await Task.findByIdAndUpdate(verification.task._id, { status: "rejected" }, { returnDocument: "after" });
+    if (!updateTaskStatus) {
+      return res.status(404).json({ message: "Task not found for this verification" });
+    }
     const rejectedTask = new RejectedTask({
       worker: verification.worker._id,
       rejectedBy: loggedInUser.id,

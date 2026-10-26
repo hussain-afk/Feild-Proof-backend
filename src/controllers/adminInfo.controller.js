@@ -1,5 +1,6 @@
 import AdminInfo from "../models/adminInfo.model.js";
 import User from "../models/user.model.js";
+import { toSafeUser } from "../services/safeUser.service.js";
 
 export const getAdminInfos = async (req, res) => {
     try {
@@ -25,7 +26,7 @@ export const getAllManagerRequests = async (req, res) => {
             role: 'pending_manager',
             isBanned: { $ne: true },
         }).sort({ createdAt: -1 });
-        return res.status(200).json(managerRequests);
+        return res.status(200).json(managerRequests.map(toSafeUser));
     } catch (error) {
         console.error('Manager requests fetch error:', error);
         return res.status(500).json({ message: 'Error fetching manager requests' });
@@ -61,7 +62,7 @@ export const updateManagerRequest = async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
         req.app.get("io")?.to("admins").emit("manager_requests_updated");
-        return res.status(200).json(updatedUser);
+        return res.status(200).json(toSafeUser(updatedUser));
     } catch (error) {
         console.error('Manager request update error:', error);
         return res.status(500).json({ message: 'Error updating manager request' });

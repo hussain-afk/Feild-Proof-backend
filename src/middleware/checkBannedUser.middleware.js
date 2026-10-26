@@ -3,7 +3,7 @@ const checkUser = (req, res, next) => {
     if (!loggedInUser ) {
         return res.status(401).json({ message: "Unauthorized. User not logged in." });
     }
-    if (loggedInUser.isBanned) {
+    if (loggedInUser.isBanned === true) {
         return res.status(403).json({ message: "Access denied. User is banned." });
     }
     next();
