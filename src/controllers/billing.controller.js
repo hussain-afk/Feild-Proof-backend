@@ -201,18 +201,18 @@ export const createCheckoutSession = async (req, res) => {
       cancel_url: `${envConfig.frontendUrl}/manager/plans?canceled=1`,
     });
 
-    // console.log("[8] Stripe session created:", session.id);
-    // console.log("[9] Checkout URL generated:", Boolean(session.url));
-    // console.log("========== STRIPE CHECKOUT SUCCESS ==========\n");
+    console.log("[8] Stripe session created:", session.id);
+    console.log("[9] Checkout URL generated:", Boolean(session.url));
+    console.log("========== STRIPE CHECKOUT SUCCESS ==========\n");
 
     return res.status(200).json({ url: session.url });
 
   } catch (error) {
-    // console.error("\n========== STRIPE CHECKOUT FAILED ==========");
-    // console.error("Error message:", error.message);
-    // console.error("Error code:", error.code);
-    // console.error("Full error:", error);
-    // console.error("========== END ERROR ==========\n");
+    console.error("\n========== STRIPE CHECKOUT FAILED ==========");
+    console.error("Error message:", error.message);
+    console.error("Error code:", error.code);
+    console.error("Full error:", error);
+    console.error("========== END ERROR ==========\n");
 
     if (error?.code === "amount_too_small") {
       return res.status(400).json({
