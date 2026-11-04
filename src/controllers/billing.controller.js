@@ -226,74 +226,186 @@ export const createCheckoutSession = async (req, res) => {
   }
 };
 
+
 export const stripeWebhook = async (req, res) => {
+    console.log("\n========== STRIPE WEBHOOK RECEIVED ==========");
 
-  console.log("\n========== STRIPE WEBHOOK RECEIVED ==========");
-  if (!stripe || !envConfig.stripeWebhookSecret) {
-    return res.status(503).json({ message: "Payments are not configured on the server" });
-  }
+    if (!stripe || !envConfig.stripeWebhookSecret) {
+        console.error("❌ Stripe is not configured");
 
-  const sig = req.headers["stripe-signature"];
-  let event;
-
-  try {
-    event = stripe.webhooks.constructEvent(
-      req.body,
-      sig,
-      envConfig.stripeWebhookSecret
-    );
-  } catch (err) {
-    console.error("Webhook signature failed:", err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
-  }
-
-  try {
-    if (event.type === "checkout.session.completed") {
-      const session = event.data.object;
-
-      if (session.payment_status !== "paid") {
-        return res.json({ received: true });
-      }
-
-      const managerId = session.metadata?.managerId;
-      const planId = session.metadata?.planId;
-
-      if (!managerId || !planId || !mongoose.isValidObjectId(managerId) || !mongoose.isValidObjectId(planId)) {
-        console.error("Stripe checkout session has invalid metadata:", session.id);
-        return res.status(400).json({ message: "Invalid checkout metadata" });
-      }
-
-      const plan = await Plan.findById(planId);
-      if (!plan) {
-        console.error("Stripe checkout session references missing plan:", planId);
-        return res.status(500).json({ message: "Plan no longer exists" });
-      }
-
-      const endsAt =
-        plan.days && Number(plan.days) > 0
-          ? new Date(Date.now() + Number(plan.days) * 24 * 60 * 60 * 1000)
-          : null;
-
-      await Subscription.findOneAndUpdate(
-        { managerId },
-        {
-          plan: plan.plan,
-          planId: plan._id,
-          workerLimit: plan.workerLimit,
-          taskLimit: plan.taskLimit,
-          status: "active",
-          endsAt,
-          stripeSessionId: session.id,
-          stripePaymentIntentId: session.payment_intent || null,
-        },
-        { upsert: true, setDefaultsOnInsert: true }
-      );
-      console.log("Subscription updated for manager:", managerId);
+        return res.status(503).json({
+            message: "Payments are not configured on the server",
+        });
     }
-  } catch (error) {
-    console.error("Stripe webhook processing failed:", error);
-    return res.status(500).json({ message: "Webhook processing failed" });
-  }
 
-  return res.json({ received: true });
+    const sig = req.headers["stripe-signature"];
+
+    let event;
+
+    // STEP 1: Verify Stripe webhook signature
+    try {
+        event = stripe.webhooks.constructEvent(
+            req.body,
+            sig,
+            envConfig.stripeWebhookSecret
+        );
+
+        console.log("✅ Stripe signature verified");
+        console.log("✅ Stripe Event Type:", event.type);
+
+    } catch (err) {
+        console.error("❌ Webhook signature failed:", err.message);
+
+        return res.status(400).send(
+            `Webhook Error: ${err.message}`
+        );
+    }
+
+    // STEP 2: Process webhook event
+    try {
+        if (event.type === "checkout.session.completed") {
+            console.log("✅ Checkout session event matched");
+
+            const session = event.data.object;
+
+            console.log("Session ID:", session.id);
+            console.log("Payment Status:", session.payment_status);
+            console.log("Payment Intent:", session.payment_intent);
+            console.log("Metadata:", session.metadata);
+
+            // STEP 3: Check payment status
+            if (session.payment_status !== "paid") {
+                console.log("⚠️ Payment is not completed yet");
+
+                return res.json({
+                    received: true,
+                    message: "Payment not completed",
+                });
+            }
+
+            console.log("✅ Payment confirmed");
+
+            // STEP 4: Validate metadata
+            const managerId = session.metadata?.managerId;
+            const planId = session.metadata?.planId;
+
+            console.log("Manager ID:", managerId);
+            console.log("Plan ID:", planId);
+
+            if (
+                !managerId ||
+                !planId ||
+                !mongoose.isValidObjectId(managerId) ||
+                !mongoose.isValidObjectId(planId)
+            ) {
+                console.error(
+                    "❌ Invalid checkout metadata:",
+                    session.id
+                );
+
+                return res.status(400).json({
+                    message: "Invalid checkout metadata",
+                });
+            }
+
+            // STEP 5: Find selected plan
+            const plan = await Plan.findById(planId);
+
+            if (!plan) {
+                console.error("❌ Plan not found:", planId);
+
+                return res.status(500).json({
+                    message: "Plan no longer exists",
+                });
+            }
+
+            console.log("✅ Plan found:", plan.plan);
+
+            // STEP 6: Calculate subscription expiry
+            const endsAt =
+                plan.days && Number(plan.days) > 0
+                    ? new Date(
+                        Date.now() +
+                        Number(plan.days) * 24 * 60 * 60 * 1000
+                    )
+                    : null;
+
+            console.log("Subscription Ends At:", endsAt);
+
+            // STEP 7: Update subscription in MongoDB
+            const updatedSubscription =
+                await Subscription.findOneAndUpdate(
+                    { managerId },
+                    {
+                        plan: plan.plan,
+                        planId: plan._id,
+                        workerLimit: plan.workerLimit,
+                        taskLimit: plan.taskLimit,
+                        status: "active",
+                        endsAt,
+                        stripeSessionId: session.id,
+                        stripePaymentIntentId:
+                            session.payment_intent || null,
+                    },
+                    {
+                        upsert: true,
+                        new: true,
+                        runValidators: true,
+                        setDefaultsOnInsert: true,
+                    }
+                );
+
+            // STEP 8: Verify database update
+            console.log("\n========== DATABASE UPDATE RESULT ==========");
+
+            console.log(
+                "Updated Subscription:",
+                updatedSubscription
+            );
+
+            console.log(
+                "Saved Stripe Session ID:",
+                updatedSubscription?.stripeSessionId
+            );
+
+            console.log(
+                "Saved Payment Intent ID:",
+                updatedSubscription?.stripePaymentIntentId
+            );
+
+            console.log("============================================");
+
+            if (!updatedSubscription) {
+                throw new Error(
+                    "Subscription update returned no document"
+                );
+            }
+
+            console.log(
+                "✅ Subscription updated for manager:",
+                managerId
+            );
+        } else {
+            console.log(
+                "ℹ️ Event ignored:",
+                event.type
+            );
+        }
+
+    } catch (error) {
+        console.error(
+            "❌ Stripe webhook processing failed:",
+            error
+        );
+
+        return res.status(500).json({
+            message: "Webhook processing failed",
+        });
+    }
+
+    console.log("========== STRIPE WEBHOOK COMPLETED ==========\n");
+
+    return res.json({
+        received: true,
+    });
 };
