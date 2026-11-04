@@ -24,79 +24,79 @@ export const getAvailablePlans = async (_req, res) => {
 };
 
 export const getMySubscription = async (req, res) => {
-    try {
-        const loggedInUser = req.user;
-        const userId = loggedInUser._id || loggedInUser.id; // Use _id if available, otherwise use id
-        if (loggedInUser.role !== "manager") {
-            return res.status(403).json({ message: "Access denied. Only managers can view subscription." });
-        }
-        const subscription = await Subscription.findOne({ managerId: userId });
-        if (!subscription) {
-            return res.status(404).json({ message: "Subscription not found." });
-        }
-        return res.status(200).json(subscription);
-    } catch (error) {
-        console.error("Error fetching subscription:", error);
-        return res.status(500).json({ message: "Internal server error" });
+  try {
+    const loggedInUser = req.user;
+    const userId = loggedInUser._id || loggedInUser.id; // Use _id if available, otherwise use id
+    if (loggedInUser.role !== "manager") {
+      return res.status(403).json({ message: "Access denied. Only managers can view subscription." });
     }
+    const subscription = await Subscription.findOne({ managerId: userId });
+    if (!subscription) {
+      return res.status(404).json({ message: "Subscription not found." });
+    }
+    return res.status(200).json(subscription);
+  } catch (error) {
+    console.error("Error fetching subscription:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
 }
 
 export const cancelMySubscription = async (req, res) => {
-    try {
-        const loggedInUser = req.user;
-        const userId = loggedInUser._id || loggedInUser.id;
+  try {
+    const loggedInUser = req.user;
+    const userId = loggedInUser._id || loggedInUser.id;
 
-        if (loggedInUser.role !== "manager") {
-            return res.status(403).json({
-                message: "Access denied. Only managers can cancel subscription.",
-            });
-        }
-
-        const subscription = await Subscription.findOne({ managerId: userId });
-        if (!subscription) {
-            return res.status(404).json({ message: "Subscription not found." });
-        }
-
-        const currentPlanName = String(subscription.plan || "").toLowerCase();
-        if (currentPlanName === "free") {
-            return res.status(400).json({
-                message: "Free plan cannot be canceled.",
-            });
-        }
-
-        const freePlan = await Plan.findOne({
-            plan: String(PLANS.FREE.name).toLowerCase(),
-            status: "active",
-        });
-        if (!freePlan) {
-            return res.status(500).json({
-                message: "Free plan is not configured in the database",
-            });
-        }
-
-        // Paid/trial → move back to free (still usable)
-        subscription.plan = freePlan.plan;
-        subscription.planId = freePlan._id; // if you have this field
-        subscription.workerLimit = freePlan.workerLimit;
-        subscription.taskLimit = freePlan.taskLimit;
-        subscription.status = "active";
-        subscription.endsAt = null;
-        subscription.stripeSessionId = null;
-        subscription.stripePaymentIntentId = null;
-        // optional audit:
-        // subscription.canceledAt = new Date();
-        // subscription.previousPlan = currentPlanName;
-
-        await subscription.save();
-
-        return res.status(200).json({
-            message: "Subscription canceled. You are now on the free plan.",
-            data: subscription,
-        });
-    } catch (error) {
-        console.error("Error canceling subscription:", error);
-        return res.status(500).json({ message: "Internal server error" });
+    if (loggedInUser.role !== "manager") {
+      return res.status(403).json({
+        message: "Access denied. Only managers can cancel subscription.",
+      });
     }
+
+    const subscription = await Subscription.findOne({ managerId: userId });
+    if (!subscription) {
+      return res.status(404).json({ message: "Subscription not found." });
+    }
+
+    const currentPlanName = String(subscription.plan || "").toLowerCase();
+    if (currentPlanName === "free") {
+      return res.status(400).json({
+        message: "Free plan cannot be canceled.",
+      });
+    }
+
+    const freePlan = await Plan.findOne({
+      plan: String(PLANS.FREE.name).toLowerCase(),
+      status: "active",
+    });
+    if (!freePlan) {
+      return res.status(500).json({
+        message: "Free plan is not configured in the database",
+      });
+    }
+
+    // Paid/trial → move back to free (still usable)
+    subscription.plan = freePlan.plan;
+    subscription.planId = freePlan._id; // if you have this field
+    subscription.workerLimit = freePlan.workerLimit;
+    subscription.taskLimit = freePlan.taskLimit;
+    subscription.status = "active";
+    subscription.endsAt = null;
+    subscription.stripeSessionId = null;
+    subscription.stripePaymentIntentId = null;
+    // optional audit:
+    // subscription.canceledAt = new Date();
+    // subscription.previousPlan = currentPlanName;
+
+    await subscription.save();
+
+    return res.status(200).json({
+      message: "Subscription canceled. You are now on the free plan.",
+      data: subscription,
+    });
+  } catch (error) {
+    console.error("Error canceling subscription:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
 };
 
 
@@ -272,7 +272,7 @@ export const stripeWebhook = async (req, res) => {
           ? new Date(Date.now() + Number(plan.days) * 24 * 60 * 60 * 1000)
           : null;
 
-      await Subscription.findOneAndUpdate(
+      const updatedSubscription = await Subscription.findOneAndUpdate(
         { managerId },
         {
           plan: plan.plan,
@@ -284,8 +284,21 @@ export const stripeWebhook = async (req, res) => {
           stripeSessionId: session.id,
           stripePaymentIntentId: session.payment_intent || null,
         },
-        { upsert: true, setDefaultsOnInsert: true }
+        {
+          upsert: true,
+          new: true,
+          runValidators: true,
+          setDefaultsOnInsert: true,
+        }
       );
+
+      console.log("========== WEBHOOK DB UPDATE ==========");
+      console.log("Event:", event.type);
+      console.log("Payment Status:", session.payment_status);
+      console.log("Session ID:", session.id);
+      console.log("Payment Intent:", session.payment_intent);
+      console.log("Updated Subscription:", updatedSubscription);
+      console.log("========================================");
       console.log("Subscription updated for manager:", managerId);
     }
   } catch (error) {
