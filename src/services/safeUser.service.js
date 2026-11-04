@@ -11,6 +11,10 @@ const safeUserFields = [
     "isBanned",
     "createdAt",
     "updatedAt",
+    "plan",
+    "planStatus",
+    "planEndsAt",
+    "workerLimit"
 ];
 
 export const toSafeUser = (user) => {

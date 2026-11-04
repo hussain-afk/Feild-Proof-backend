@@ -1,10 +1,15 @@
 import mongoose from "mongoose";
 import Invitation from "../models/inviteWorker.model.js";
+import { assertManagerCanAddWorker } from '../services/plan.service.js'
 import User from "../models/user.model.js";
 
 export const inviteWorker = async (req, res) => {
   try {
     const managerId = req.user._id || req.user.id;
+    const check = await assertManagerCanAddWorker(managerId);
+    if (!check.ok) {
+      return res.status(check.statusCode).json({ message: check.message });
+    }
     const { workerId } = req.body;
 
     if (!workerId || !mongoose.isValidObjectId(workerId)) {

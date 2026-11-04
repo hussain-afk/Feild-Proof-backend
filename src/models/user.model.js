@@ -33,6 +33,31 @@ const userSchema = new mongoose.Schema(
             type: Number,
             default: 0,
         },
+        paymentMethod: {
+            type: {
+                bankName: {
+                    type: String,
+                    default: '',
+                    trim: true,
+                },
+                accountNumber: {
+                    type: String,
+                    default: '',
+                    trim: true,
+                },
+                accountHolderName: {
+                    type: String,
+                    default: '',
+                    trim: true,
+                },
+                jazzcashOrEasypaisa: {
+                    type: String,
+                    default: '',
+                    trim: true,
+                },
+            },
+            default: null,
+        },
         avatar: {
             type: String,
             default: '',
@@ -59,31 +84,7 @@ const userSchema = new mongoose.Schema(
             type: Boolean,
             default: false,
         },
-        paymentMethod: {
-            type: {
-                bankName: {
-                    type: String,
-                    default: '',
-                    trim: true,
-                },
-                accountNumber: {
-                    type: String,
-                    default: '',
-                    trim: true,
-                },
-                accountHolderName: {
-                    type: String,
-                    default: '',
-                    trim: true,
-                },
-                jazzcashOrEasypaisa: {
-                    type: String,
-                    default: '',
-                    trim: true,
-                },
-            },
-            default: null, // Initial save par value null jayegi
-        },
+
     },
     {
         timestamps: true,

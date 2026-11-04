@@ -16,6 +16,8 @@ import cors from 'cors';
 import maintenanceRoutes from './src/router/maintenance.route.js';
 import invitationRoutes from './src/router/invitation.route.js';
 import { apiLimiter } from './src/middleware/rateLimiter.js';
+import billingRoutes from './src/router/billing.route.js';
+import { stripeWebhook } from './src/controllers/billing.controller.js';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -37,6 +39,11 @@ app.use((req, res, next) => {
   }
   next();
 });
+app.post(
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  stripeWebhook
+);
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(cookieParser());
@@ -116,7 +123,7 @@ app.get('/health', (req, res) => {
 
 // Routes
 app.use('/api/system', maintenanceRoutes);
-
+app.use('/api/billing', billingRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/notifications', notificationRoutes);

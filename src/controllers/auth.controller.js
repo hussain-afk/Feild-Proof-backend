@@ -9,6 +9,10 @@ import generateVerificationCode from '../services/codeGenerate.service.js';
 import BlackListTokens from '../models/blackListTokens.model.js';
 import { toSafeUser } from '../services/safeUser.service.js';
 import Invitation from '../models/inviteWorker.model.js';
+import Verification from "../models/verification.model.js";
+import Notification from "../models/notification.model.js";
+import Task from "../models/task.model.js";
+import Subscription from "../models/subscription.model.js";
 
 const cookieOptions = {
     httpOnly: true,
@@ -84,7 +88,7 @@ export const registerUser = async (req, res) => {
         }
 
         // 8. Response without password
-            return res.status(201).json(toSafeUser(newUser));
+        return res.status(201).json(toSafeUser(newUser));
     } catch (error) {
         if (error?.code === 11000) {
             return res.status(409).json({ message: "User already exists" });
@@ -408,25 +412,203 @@ export const banUser = async (req, res) => {
 }
 
 export const deleteUser = async (req, res) => {
+    let session;
+
     try {
-        const userId = req.params.id;
-        const user = req.user;
-        if (!user || user.role !== 'admin') {
-            return res.status(401).json({ message: 'Unauthorized' });
+        const { id } = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({
+                message: "Invalid user ID",
+            });
         }
-        const deletedUser = await User.findByIdAndDelete(userId);
-        if (!deletedUser) {
-            return res.status(404).json({ message: 'User not found' });
-        }
-        await Invitation.deleteMany({ $or: [{ managerId: userId }, { workerId: userId }] });
-        req.app.get('disconnectUserSockets')?.(deletedUser._id);
-        const message = `User deleted By Admin: ${user.name} with email: ${deletedUser.email}`;
-        const adminInfo = await AdminInfo.create({ message });
-        res.status(200).json({ message: 'User deleted successfully' });
+
+        session = await mongoose.startSession();
+
+        let deletedUserRole = null;
+
+        await session.withTransaction(async () => {
+            const user = await User.findById(id).session(session);
+
+            if (!user) {
+                const error = new Error("USER_NOT_FOUND");
+                error.code = "USER_NOT_FOUND";
+                throw error;
+            }
+
+            deletedUserRole = user.role;
+
+            // Protect the last admin.
+            if (user.role === "admin") {
+                const adminCount = await User.countDocuments({
+                    role: "admin",
+                    _id: { $ne: user._id },
+                }).session(session);
+
+                if (adminCount === 0) {
+                    const error = new Error("LAST_ADMIN");
+                    error.code = "LAST_ADMIN";
+                    throw error;
+                }
+            }
+
+            // 1. Worker cleanup.
+            if (user.role === "worker") {
+                // Remove this worker from task assignments.
+                await Task.updateMany(
+                    { assignedWorker: user._id },
+                    {
+                        $pull: {
+                            assignedWorker: user._id,
+                        },
+                    },
+                    { session }
+                );
+
+                // Remove active verification requests.
+                await Verification.deleteMany(
+                    { worker: user._id },
+                    { session }
+                );
+            }
+
+            // 2. Manager cleanup.
+            if (user.role === "manager") {
+                // Detach workers from this manager.
+                await User.updateMany(
+                    { managerId: user._id },
+                    {
+                        $set: {
+                            managerId: null,
+                        },
+                    },
+                    { session }
+                );
+
+                // Cancel and preserve manager-created tasks.
+                await Task.updateMany(
+                    { createdBy: user._id },
+                    {
+                        $set: {
+                            status: "cancelled",
+                        },
+                    },
+                    { session }
+                );
+
+                // Remove manager invitations.
+                await Invitation.deleteMany(
+                    { managerId: user._id },
+                    { session }
+                );
+
+                // Remove manager subscription.
+                await Subscription.deleteMany(
+                    { managerId: user._id },
+                    { session }
+                );
+            }
+
+            // 3. Remove notifications where user is sender or recipient.
+            await Notification.deleteMany(
+                {
+                    $or: [
+                        { recipient: user._id },
+                        { sender: user._id },
+                    ],
+                },
+                { session }
+            );
+
+            // 4. Preserve history, but detach deleted user's references.
+            await ApprovedTask.updateMany(
+                {
+                    $or: [
+                        { worker: user._id },
+                        { approvedBy: user._id },
+                    ],
+                },
+                {
+                    $set: {
+                        ...(String(user.role) === "worker"
+                            ? { worker: null }
+                            : {}),
+                        ...(String(user.role) === "admin" ||
+                            String(user.role) === "manager"
+                            ? { approvedBy: null }
+                            : {}),
+                    },
+                },
+                { session }
+            );
+
+            await RejectedTask.updateMany(
+                {
+                    $or: [
+                        { worker: user._id },
+                        { rejectedBy: user._id },
+                    ],
+                },
+                {
+                    $set: {
+                        ...(String(user.role) === "worker"
+                            ? { worker: null }
+                            : {}),
+                        ...(String(user.role) === "admin" ||
+                            String(user.role) === "manager"
+                            ? { rejectedBy: null }
+                            : {}),
+                    },
+                },
+                { session }
+            );
+
+            // 5. Remove blacklisted tokens associated with this user.
+            // This assumes the blacklist schema has a user field.
+            await BlackListTokens.deleteMany(
+                { user: user._id },
+                { session }
+            );
+
+            // 6. Delete user last.
+            await User.deleteOne(
+                { _id: user._id },
+                { session }
+            );
+        });
+
+        // Disconnect deleted user's sockets after commit.
+        req.app.get("disconnectUserSockets")?.(id);
+
+        return res.status(200).json({
+            message: "User and related data deleted successfully",
+        });
+
     } catch (error) {
-        res.status(500).json({ message: 'Internal server error' });
+        if (error.code === "USER_NOT_FOUND") {
+            return res.status(404).json({
+                message: "User not found",
+            });
+        }
+
+        if (error.code === "LAST_ADMIN") {
+            return res.status(400).json({
+                message: "Cannot delete the last admin",
+            });
+        }
+
+        console.error("Delete user error:", error);
+
+        return res.status(500).json({
+            message: "Failed to delete user",
+        });
+
+    } finally {
+        if (session) {
+            await session.endSession();
+        }
     }
-}
+};
 
 export const getAvalaibleWorkers = async (req, res) => {
     try {

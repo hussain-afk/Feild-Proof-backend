@@ -6,15 +6,15 @@ const rejectedTaskSchema = new mongoose.Schema({
         ref: "Task",
         required: true,
     },
-    rejectedBy: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-        required: true,
-    },
     worker: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
-        required: true,
+        default: null,
+    },
+    approvedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
     },
     message: {
         type: String

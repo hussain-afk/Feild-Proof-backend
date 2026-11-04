@@ -5,6 +5,7 @@ import User from "../models/user.model.js";
 import adminInfo from "../models/adminInfo.model.js";
 import ApprovedTask from "../models/approvedTasks.model.js";
 import RejectedTask from "../models/rejectedTasks.model.js";
+import mongoose from "mongoose";
 
 /*
  * ZAROORI (kai workers ke liye): verification.model.js me ye hona chahiye
@@ -492,47 +493,124 @@ export const deleteVerification = async (req, res) => {
 /* ------------------------------------------------------------------ */
 
 export const onVerificationApproved = async (req, res) => {
+  const session = await mongoose.startSession();
+
   try {
     const verificationId = req.params.id;
-    console.log("Approving verification with ID:", verificationId);
-    if (!verificationId) {
-      return res.status(400).json({ message: "Verification ID is required" });
-    }
     const loggedInUser = req.user;
-    const verification = await Verification.findById(verificationId).populate("task");
+
+    if (!verificationId) {
+      return res.status(400).json({
+        message: "Verification ID is required",
+      });
+    }
+
+    if (!mongoose.isValidObjectId(verificationId)) {
+      return res.status(400).json({
+        message: "Invalid verification ID",
+      });
+    }
+
     if (!loggedInUser) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(401).json({
+        message: "User not authenticated",
+      });
     }
-    if (!verification) {
-      return res.status(404).json({ message: "Verification not found" });
-    }
-    if (!(await canReview(req.user, verification))) {
-      return res.status(403).json({ message: "You cannot review this verification" });
-    }
-    if (!verification.task) {
-      return res.status(404).json({ message: "Task not found for this verification" });
-    }
-    const updateTaskStatus = await Task.findByIdAndUpdate(verification.task._id, { status: "approved" }, { returnDocument: "after" });
-    if (!updateTaskStatus) {
-      return res.status(404).json({ message: "Task not found for this verification" });
-    }
-    const approvedTask = new ApprovedTask({
-      worker: verification.worker._id,
-      approvedBy: loggedInUser.id,
-      task: verification.task._id,
-      message: `Task "${verification.task.title}" approved by ${loggedInUser.name} (${loggedInUser.role}) on ${new Date().toLocaleString()}.`,
+
+    let approvedTask = null;
+    let workerId = null;
+
+    await session.withTransaction(async () => {
+      const verification = await Verification.findById(verificationId)
+        .populate("task")
+        .session(session);
+
+      if (!verification) {
+        throw new Error("VERIFICATION_NOT_FOUND");
+      }
+
+      if (!(await canReview(loggedInUser, verification))) {
+        throw new Error("FORBIDDEN_REVIEW");
+      }
+
+      if (!verification.task) {
+        throw new Error("TASK_NOT_FOUND");
+      }
+
+      const task = await Task.findByIdAndUpdate(
+        verification.task._id,
+        { status: "approved" },
+        {
+          new: true,
+          session,
+        }
+      );
+
+      if (!task) {
+        throw new Error("TASK_NOT_FOUND");
+      }
+
+      const approvedRecord = new ApprovedTask({
+        worker: verification.worker._id || verification.worker,
+        approvedBy: loggedInUser.id || loggedInUser._id,
+        task: verification.task._id,
+        message: `Task "${verification.task.title}" approved by ${loggedInUser.name} (${loggedInUser.role}) on ${new Date().toLocaleString()}.`,
+      });
+
+      await approvedRecord.save({ session });
+
+      const deletion = await Verification.deleteOne(
+        { _id: verificationId },
+        { session }
+      );
+
+      if (deletion.deletedCount !== 1) {
+        throw new Error("VERIFICATION_DELETE_FAILED");
+      }
+
+      approvedTask = task;
+      workerId = String(verification.worker._id || verification.worker);
     });
-    await approvedTask.save();
-    const deletedVerification = await Verification.findByIdAndDelete(verificationId);
-    if (!deletedVerification) {
-      return res.status(404).json({ message: "Verification not found for deletion" });
-    }
-    // socket notification for task status update
-    notifyChange({ io: req.app.get("io"), task: updateTaskStatus, workerId: String(verification.worker), myProgress: "not_started" });
-    res.status(200).json({ message: "Verification approved and task status updated to approved" });
+
+    // Transaction successful hone ke baad socket notification
+    notifyChange({
+      io: req.app.get("io"),
+      task: approvedTask,
+      workerId,
+      myProgress: "not_started",
+    });
+
+    return res.status(200).json({
+      message: "Verification approved and task status updated to approved",
+    });
+
   } catch (error) {
     console.error("Error approving verification:", error);
-    res.status(500).json({ message: "Error approving verification" });
+
+    if (error.message === "VERIFICATION_NOT_FOUND") {
+      return res.status(404).json({
+        message: "Verification not found",
+      });
+    }
+
+    if (error.message === "TASK_NOT_FOUND") {
+      return res.status(404).json({
+        message: "Task not found for this verification",
+      });
+    }
+
+    if (error.message === "FORBIDDEN_REVIEW") {
+      return res.status(403).json({
+        message: "You cannot review this verification",
+      });
+    }
+
+    return res.status(500).json({
+      message: "Error approving verification",
+    });
+
+  } finally {
+    await session.endSession();
   }
 };
 
