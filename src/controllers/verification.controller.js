@@ -7,42 +7,24 @@ import ApprovedTask from "../models/approvedTasks.model.js";
 import RejectedTask from "../models/rejectedTasks.model.js";
 import mongoose from "mongoose";
 
-/*
- * ZAROORI (kai workers ke liye): verification.model.js me ye hona chahiye
- *
- *     verificationSchema.index({ task: 1, worker: 1 }, { unique: true });   // har worker ka task par ek record
- *
- * Aur "task" par akeli unique index NAHI honi chahiye (task: { unique: true } ya index({ task: 1 }, { unique: true })).
- * Wo hogi to task par doosre worker ka check-in "E11000 duplicate key" se fail hota hai.
- * Purani index hatane ke liye ek baar server start par chalao:  await Verification.syncIndexes();
- */
+
 
 /* ------------------------------------------------------------------ */
 /* Settings                                                             */
 /* ------------------------------------------------------------------ */
 
-// true ho to check-out bhi site ke radius ke andar se hi hoga
 const ENFORCE_CHECKOUT_GEOFENCE = true;
 
-// GPS hamesha thoda galat hota hai. Agar phone kehta hai "meri location 30 m tak galat ho sakti hai",
-// to worker ko utna hi extra faasla (zyada se zyada 50 m) maaf karte hain.
 const MAX_GPS_ALLOWANCE = 50;
 
-// Isse zyada kharab GPS signal ho to check-in/out nahi (sirf production me, taake laptop par test ho sake)
 const MAX_GPS_ACCURACY = process.env.NODE_ENV === "production" ? 150 : Infinity;
 
-/* ------------------------------------------------------------------ */
-/* Location ke helpers                                                  */
-/* ------------------------------------------------------------------ */
-
-// "", null, undefined = value nahi di gayi
 const hasValue = (value) =>
   value !== undefined && value !== null && String(value).trim() !== "";
 
 const isValidLatLng = (lat, lng) =>
   Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
 
-// Do jagahon ke beech ka faasla (meters me), Haversine formula
 function getDistanceInMeters(lat1, lon1, lat2, lon2) {
   const R = 6371000; // zameen ka radius
   const toRad = (deg) => (deg * Math.PI) / 180;
@@ -63,7 +45,6 @@ const canReview = async (user, verification) => {
   return Boolean(task) && String(task.createdBy) === String(user._id || user.id);
 };
 
-// Task me asli site location hai ya nahi. (0, 0) ko "nahi" maante hain.
 function taskHasLocation(task) {
   const loc = task.siteLocation;
   if (!hasValue(loc?.latitude) || !hasValue(loc?.longitude)) return false;
@@ -73,15 +54,6 @@ function taskHasLocation(task) {
   return isValidLatLng(lat, lng) && !(lat === 0 && lng === 0);
 }
 
-/**
- * Worker ki location check karta hai.
- *
- * Rule:
- *   - Task me site location HAI  -> worker ki location zaroori, aur radius ke andar honi chahiye
- *   - Task me site location NAHI -> location optional, mil jaye to save kar lo
- *
- * Wapas deta hai:  { error }  ya  { location, distance }
- */
 function checkWorkerLocation({ task, latitude, longitude, accuracy, label, enforce = true }) {
   // 1. Worker ki location padho (dono honi chahiye ya dono nahi)
   const hasLat = hasValue(latitude);
@@ -153,16 +125,6 @@ function checkWorkerLocation({ task, latitude, longitude, accuracy, label, enfor
   return { location, distance: Math.round(distance) };
 }
 
-/* ------------------------------------------------------------------ */
-/* Task ka status aur socket updates                                    */
-/* ------------------------------------------------------------------ */
-
-/**
- * Task ka status verifications se nikalta hai (ek hi jagah, to kahin ghalti nahi hoti):
- *   koi record nahi                       -> pending
- *   sab assigned workers check-out kar chuke -> completed
- *   baaqi sab                              -> in-progress
- */
 async function updateTaskStatus(task) {
   const records = await Verification.find({ task: task._id }).select("worker checkOut.time");
 
@@ -180,7 +142,6 @@ async function updateTaskStatus(task) {
   return task.status;
 }
 
-// Ek event ko kai rooms me bhejna (room ka naam = user ki id)
 const emitToRooms = (io, rooms, event, payload) => {
   if (!io) return;
   [...new Set(rooms.filter(Boolean).map(String))].forEach((room) =>
@@ -188,15 +149,6 @@ const emitToRooms = (io, rooms, event, payload) => {
   );
 };
 
-/**
- * Screens ko batao ke kuch badla:
- *   - task banane wale manager ko: task ka naya status
- *   - jis worker ne kiya: status + uski apni progress ("myProgress")
- *   - admin dashboard ko: activity log me nayi row
- *
- * myProgress: "not_started" | "checked_in" | "checked_out"
- * (Har worker ka card isi se dikhata hai ke use Check In dabana hai ya Check Out.)
- */
 function notifyChange({ io, task, workerId, myProgress }) {
   if (!io || !task) return;
 
@@ -214,7 +166,6 @@ function notifyChange({ io, task, workerId, myProgress }) {
   io.to("admins").emit("admin_info_updated");
 }
 
-// Duplicate-key error (E11000) ko samajhna
 function handleDuplicateKey(error, res) {
   if (error.code !== 11000) return null;
 
@@ -618,56 +569,130 @@ export const onVerificationApproved = async (req, res) => {
 /* On Reject                                           */
 /* ------------------------------------------------------------------ */
 
+
 export const onVerificationRejected = async (req, res) => {
+  const session = await mongoose.startSession();
+
   try {
     const verificationId = req.params.id;
-    // console.log(req.body);
-    const reason = req.body?.reason;
-    // console.log("Rejecting verification with ID:", verificationId, "Reason:", reason);
-    if (!verificationId) {
-      return res.status(400).json({ message: "Verification ID is required" });
+    const reason = req.body?.reason?.trim();
+
+    // 1. Basic validation
+    if (!verificationId || !mongoose.isValidObjectId(verificationId)) {
+      return res.status(400).json({
+        message: "Valid verification ID is required",
+      });
     }
-    if (!reason || reason.trim() === "") {
-      return res.status(400).json({ message: "Rejection reason is required" });
+
+    if (!reason) {
+      return res.status(400).json({
+        message: "Rejection reason is required",
+      });
     }
+
     const loggedInUser = req.user;
-    const verification = await Verification.findById(verificationId).populate("task");
+
     if (!loggedInUser) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(404).json({
+        message: "User not found",
+      });
     }
+
+    // 2. Find verification and task
+    const verification = await Verification.findById(verificationId)
+      .populate("task")
+      .session(session);
+
     if (!verification) {
-      return res.status(404).json({ message: "Verification not found" });
+      return res.status(404).json({
+        message: "Verification not found",
+      });
     }
+
+    // 3. Authorization check
     if (!(await canReview(loggedInUser, verification))) {
-      return res.status(403).json({ message: "You cannot review this verification" });
+      return res.status(403).json({
+        message: "You cannot review this verification",
+      });
     }
+
     if (!verification.task) {
-      return res.status(404).json({ message: "Task not found for this verification" });
+      return res.status(404).json({
+        message: "Task not found for this verification",
+      });
     }
-    const updateTaskStatus = await Task.findByIdAndUpdate(verification.task._id, { status: "rejected" }, { returnDocument: "after" });
-    if (!updateTaskStatus) {
-      return res.status(404).json({ message: "Task not found for this verification" });
-    }
-    const rejectedTask = new RejectedTask({
-      worker: verification.worker._id,
-      rejectedBy: loggedInUser.id,
-      task: verification.task._id,
-      message: `Task "${verification.task.title}" rejected by ${loggedInUser.name} (${loggedInUser.role}) on ${new Date().toLocaleString()}. Reason: ${reason || "No reason provided"}`,
+
+    // 4. Transaction starts
+    await session.withTransaction(async () => {
+
+      // Update task status
+      const updatedTask = await Task.findByIdAndUpdate(
+        verification.task._id,
+        {
+          $set: {
+            status: "rejected",
+          },
+        },
+        {
+          new: true,
+          session,
+          runValidators: true,
+        }
+      );
+
+      if (!updatedTask) {
+        throw new Error("Task not found for this verification");
+      }
+
+      // Create rejected task history
+      const rejectedTask = new RejectedTask({
+        worker: verification.worker._id,
+        rejectedBy: loggedInUser._id || loggedInUser.id,
+        task: verification.task._id,
+        message: `Task "${verification.task.title}" rejected by ${loggedInUser.name} (${loggedInUser.role}) on ${new Date().toLocaleString()}. Reason: ${reason}`,
+      });
+
+      await rejectedTask.save({ session });
+
+      // Delete verification
+      const deletedVerification = await Verification.findOneAndDelete(
+        {
+          _id: verificationId,
+        },
+        {
+          session,
+        }
+      );
+
+      if (!deletedVerification) {
+        throw new Error("Verification not found for deletion");
+      }
     });
-    await rejectedTask.save();
-    // console.log("Rejected task created:", rejectedTask);
-    const deletedVerification = await Verification.findByIdAndDelete(verificationId);
-    if (!deletedVerification) {
-      return res.status(404).json({ message: "Verification not found for deletion" });
-    }
-    // socket notification for task status update
-    notifyChange({ io: req.app.get("io"), task: verification.task, workerId: String(verification.worker), myProgress: "not_started" });
-    res.status(200).json({ message: "Verification rejected and task status updated to rejected" });
+
+    // 5. Notify sockets only after successful transaction
+    notifyChange({
+      io: req.app.get("io"),
+      task: verification.task,
+      workerId: String(verification.worker._id || verification.worker),
+      myProgress: "not_started",
+    });
+
+    return res.status(200).json({
+      message: "Verification rejected and task status updated to rejected",
+    });
+
   } catch (error) {
     console.error("Error rejecting verification:", error);
-    res.status(500).json({ message: "Error rejecting verification" });
+
+    return res.status(500).json({
+      message: "Error rejecting verification",
+    });
+
+  } finally {
+    await session.endSession();
   }
 };
+
 
 /* ------------------------------------------------------------------ */
 /* GET ALL APPROVED TASKS                                        */
