@@ -13,6 +13,8 @@ import Verification from "../models/verification.model.js";
 import Notification from "../models/notification.model.js";
 import Task from "../models/task.model.js";
 import Subscription from "../models/subscription.model.js";
+import ApprovedTask from "../models/approvedTasks.model.js";
+import RejectedTask from "../models/rejectedTasks.model.js";
 
 const cookieOptions = {
     httpOnly: true,
@@ -100,26 +102,34 @@ export const registerUser = async (req, res) => {
 };
 
 export const loginUser = async (req, res) => {
-    const { email, password } = req.body;
-    if (!email || !password) {
-        return res.status(400).json({ message: 'Email and password are required' });
+    try {
+        const { email, password } = req.body;
+        if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password) {
+            return res.status(400).json({ message: 'Email and password are required' });
+        }
+        const cleanEmail = email.trim().toLowerCase();
+        if (!EMAIL_REGEX.test(cleanEmail)) {
+            return res.status(400).json({ message: 'Please enter a valid email address' });
+        }
+        const isUserValid = await User.findOne({ email: cleanEmail }).select('+password');
+        if (!isUserValid) {
+            return res.status(401).json({ message: 'Invalid credentials' });
+        }
+        const isPasswordValid = await bcrypt.compare(password, isUserValid.password);
+        if (!isPasswordValid) {
+            return res.status(401).json({ message: 'Invalid credentials' });
+        }
+        if (isUserValid.isBanned) {
+            return res.status(403).json({ message: 'Access denied. User is banned.' });
+        }
+        const token = generateToken(isUserValid);
+        res.cookie('token', token, cookieOptions);
+        await AdminInfo.create({ message: `User logged in with email: ${cleanEmail}` });
+        return res.status(200).json(toSafeUser(isUserValid));
+    } catch (error) {
+        console.error('Login user error:', error);
+        return res.status(500).json({ message: 'Internal server error' });
     }
-    const isUserValid = await User.findOne({ email: email.trim().toLowerCase() }).select('+password');
-    if (!isUserValid) {
-        return res.status(401).json({ message: 'Not a valid user with this email' });
-    }
-    const isPasswordValid = await bcrypt.compare(password, isUserValid.password);
-    if (!isPasswordValid) {
-        return res.status(401).json({ message: 'Invalid credentials' });
-    }
-    if (isUserValid.isBanned) {
-        return res.status(403).json({ message: 'Access denied. User is banned.' });
-    }
-    const token = generateToken(isUserValid);
-    const message = `User logged in with email: ${email}`;
-    res.cookie('token', token, cookieOptions);
-    await AdminInfo.create({ message });
-    res.status(200).json(toSafeUser(isUserValid));
 }
 
 export const getCurrentUser = async (req, res) => {
@@ -129,7 +139,10 @@ export const getCurrentUser = async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
         const currentUser = await User.findById(user._id);
-        res.status(200).json(toSafeUser(currentUser));
+        if (!currentUser) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        return res.status(200).json(toSafeUser(currentUser));
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
     }
@@ -171,11 +184,11 @@ export const logoutUser = async (req, res) => {
         if (!token) {
             return res.status(401).json({ message: 'Access denied. No token provided.' });
         }
-        const blackListToken = await BlackListTokens.create({ token });
+        await BlackListTokens.create({ token, user: user._id });
         res.clearCookie("token", cookieOptions);
         const message = `User logged out with email: ${user.email}`;
-        const adminInfo = await AdminInfo.create({ message });
-        res.status(200).json({ message: 'Logout successful' });
+        await AdminInfo.create({ message });
+        return res.status(200).json({ message: 'Logout successful' });
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
     }
@@ -219,13 +232,24 @@ export const updateUser = async (req, res) => {
         if (String(user.id || user._id) !== String(userId)) {
             return res.status(403).json({ message: 'You can only update your own profile' });
         }
+        if (name !== undefined && (typeof name !== 'string' || !name.trim())) {
+            return res.status(400).json({ message: 'Name must not be empty' });
+        }
+        if (email !== undefined && (typeof email !== 'string' || !EMAIL_REGEX.test(email.trim().toLowerCase()))) {
+            return res.status(400).json({ message: 'Please enter a valid email address' });
+        }
+        if (password !== undefined && (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH)) {
+            return res.status(400).json({
+                message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters`,
+            });
+        }
         const existingUser = await User.findById(userId).select('+password');
         if (!existingUser) return res.status(404).json({ message: 'User not found' });
         const uploadedImageUrl = avatar ? await uploadImage(avatar) : existingUser.avatar;
         const hashedPassword = password ? await bcrypt.hash(password, 10) : existingUser.password;
         const updatedUser = await User.findByIdAndUpdate(userId, {
-            name,
-            email,
+            name: name === undefined ? existingUser.name : name.trim(),
+            email: email === undefined ? existingUser.email : email.trim().toLowerCase(),
             phone,
             hourlyRate,
             avatar: uploadedImageUrl,
@@ -238,7 +262,7 @@ export const updateUser = async (req, res) => {
         if (!updatedUser) return res.status(404).json({ message: 'User not found' });
         const message = `User updated with email: ${updatedUser.email}`;
         const adminInfo = await AdminInfo.create({ message });
-        res.status(200).json(toSafeUser(updatedUser));
+        return res.status(200).json(toSafeUser(updatedUser));
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
     }
@@ -279,11 +303,12 @@ export const updateByAdmin = async (req, res) => {
             hourlyRate: updatedHourlyRate,
             role: updatedRole
         }, {
-            returnDocument: 'after'
+            returnDocument: 'after',
+            runValidators: true,
         });
         const message = `User updated by admin with email: ${updatedUser.email}`;
         const adminInfo = await AdminInfo.create({ message });
-        res.status(200).json(toSafeUser(updatedUser));
+        return res.status(200).json(toSafeUser(updatedUser));
     } catch (error) {
         res.status(500).json({ message: 'Internal server error' });
     }
@@ -371,6 +396,9 @@ export const sendVerificationCode = async (req, res) => {
 export const verifyEmail = async (req, res) => {
     try {
         const { code } = req.body;
+        if (typeof code !== 'string' || !/^\d{6}$/.test(code)) {
+            return res.status(400).json({ message: 'Verification code must be 6 digits' });
+        }
         const user = await User.findById(req.user._id);
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
@@ -613,6 +641,9 @@ export const deleteUser = async (req, res) => {
 export const getAvalaibleWorkers = async (req, res) => {
     try {
         const loggedInUser = req.user;
+        if (!loggedInUser) {
+            return res.status(401).json({ message: "Unauthorized" });
+        }
         const isManager = loggedInUser.role === "manager";
         if (!isManager) {
             return res.status(403).json({ message: "Access denied" });

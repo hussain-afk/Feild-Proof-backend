@@ -5,15 +5,15 @@ import User from '../models/user.model.js';
 import { maintenanceBlocks } from "../controllers/maintenance.controller.js";
 
 const verifyToken = async (req, res, next) => {
-    const token = req.cookies.token
-    if (!token) {
-        return res.status(401).json({ message: 'Access denied. No token provided.' });
-    }
-    const isBlacklisted = await BlackListTokens.findOne({ token });
-    if (isBlacklisted) {
-        return res.status(401).json({ message: 'Access denied. Token is blacklisted.' });
-    }
     try {
+        const token = req.cookies?.token;
+        if (!token) {
+            return res.status(401).json({ message: 'Access denied. No token provided.' });
+        }
+        const isBlacklisted = await BlackListTokens.findOne({ token });
+        if (isBlacklisted) {
+            return res.status(401).json({ message: 'Access denied. Token is blacklisted.' });
+        }
         const decoded = await jwt.verify(token, envConfig.jwtSecret);
         const userId = decoded.userId || decoded.id || decoded._id;
         const user = await User.findById(userId);
