@@ -6,10 +6,10 @@ const connectDB = async () => {
         const connection = await mongoose.connect(envConfig.mongoUri,{
             dbName: 'field-proof',
         });
-        console.log(`MongoDB Connected: ${connection.connection.host}`);
+        return connection;
     } catch (error) {
         console.error(`Error connecting to MongoDB: ${error.message}`);
-        process.exit(1);
+        throw error; // Rethrow the error to be handled by the caller
     }
 }
 

@@ -135,8 +135,6 @@ io.on("connection", (socket) => {
   });
 });
 
-// Database
-connectDB();
 
 app.get("/health", (req, res) => {
   res.status(200).send("Server is active and healthy");
@@ -163,6 +161,34 @@ app.use((error, _req, res, _next) => {
   return res.status(500).json({ message: "Internal server error" });
 });
 
-server.listen(PORT, () => {
-  console.log(`Server & Socket.io running on port ${PORT}`);
+// ================= DATABASE + SERVER STARTUP =================
+
+const startServer = async () => {
+  try {
+    // Step 1: Wait for MongoDB connection
+    console.log("Connecting to MongoDB...");
+
+    await connectDB();
+
+    console.log("MongoDB connected successfully.");
+
+    // Step 2: Start Express + Socket.IO server
+    server.listen(PORT, () => {
+      console.log(`Server & Socket.io running on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error("Server startup failed:", error.message);
+
+    // Don't start the server if database connection fails
+    process.exit(1);
+  }
+};
+
+// Handle server errors
+server.on("error", (error) => {
+  console.error("HTTP Server Error:", error.message);
+  process.exit(1);
 });
+
+// Start application
+startServer();
