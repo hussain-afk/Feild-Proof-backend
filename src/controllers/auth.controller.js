@@ -238,10 +238,12 @@ export const updateUser = async (req, res) => {
         if (email !== undefined && (typeof email !== 'string' || !EMAIL_REGEX.test(email.trim().toLowerCase()))) {
             return res.status(400).json({ message: 'Please enter a valid email address' });
         }
-        if (password !== undefined && (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH)) {
-            return res.status(400).json({
-                message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters`,
-            });
+        if (password) {
+            if (password !== undefined && (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH)) {
+                return res.status(400).json({
+                    message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters`,
+                });
+            }
         }
         const existingUser = await User.findById(userId).select('+password');
         if (!existingUser) return res.status(404).json({ message: 'User not found' });

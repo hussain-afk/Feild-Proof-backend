@@ -15,7 +15,6 @@ const uploadImage = async (file) => {
 
         // 2. Validate actual image content
         const validatedUrl = await validateImage(file);
-        console.log("Validated image URL:", validatedUrl);
 
         // 3. Generate a safe filename
         const safeFileName = `fieldproof-${Date.now()}-${Math.random()
