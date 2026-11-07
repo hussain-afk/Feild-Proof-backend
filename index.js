@@ -13,12 +13,15 @@ import verificationRoutes from "./src/router/verification.route.js";
 import adminRoutes from "./src/router/admin.route.js";
 import User from "./src/models/user.model.js";
 import BlackListTokens from "./src/models/blackListTokens.model.js";
+import Message from "./src/models/message.model.js";
+import { canChat } from "./src/services/chat.service.js";
 import cors from "cors";
 import maintenanceRoutes from "./src/router/maintenance.route.js";
 import invitationRoutes from "./src/router/invitation.route.js";
 import { apiLimiter } from "./src/middleware/rateLimiter.js";
 import billingRoutes from "./src/router/billing.route.js";
 import { stripeWebhook } from "./src/controllers/billing.controller.js";
+import chatRoutes from "./src/router/chat.route.js";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -72,10 +75,6 @@ app.set("io", io);
 
 // ---------------------------------------------------------------
 // SOCKET AUTH (HTTP verifyToken jaisa)
-// 1) cookie token
-// 2) blacklist
-// 3) jwt verify
-// 4) user + ban
 // ---------------------------------------------------------------
 io.use(async (socket, next) => {
   try {
@@ -86,7 +85,6 @@ io.use(async (socket, next) => {
       return next(new Error("Not authenticated"));
     }
 
-    // logout ke baad naya socket mat chalne do
     const isBlacklisted = await BlackListTokens.findOne({ token });
     if (isBlacklisted) {
       return next(new Error("Access denied. Token is blacklisted."));
@@ -130,11 +128,61 @@ io.on("connection", (socket) => {
 
   socket.on("join_room", () => {});
 
+  // ----- CHAT: live send -----
+  socket.on("chat:send", async (data, ack) => {
+    try {
+      const toUserId = data?.toUserId;
+      const cleanText =
+        typeof data?.text === "string" ? data.text.trim() : "";
+
+      if (!toUserId || !cleanText) {
+        if (typeof ack === "function") {
+          ack({ ok: false, message: "toUserId and text required" });
+        }
+        return;
+      }
+
+      if (cleanText.length > 2000) {
+        if (typeof ack === "function") {
+          ack({ ok: false, message: "Message too long" });
+        }
+        return;
+      }
+
+      const allowed = await canChat(userId, toUserId);
+      if (!allowed) {
+        if (typeof ack === "function") {
+          ack({ ok: false, message: "Not allowed" });
+        }
+        return;
+      }
+
+      const message = await Message.create({
+        sender: userId,
+        receiver: toUserId,
+        text: cleanText,
+      });
+
+      const payload = message.toObject();
+
+      io.to(String(toUserId)).emit("chat:message", payload);
+      io.to(String(userId)).emit("chat:message", payload);
+
+      if (typeof ack === "function") {
+        ack({ ok: true, message: payload });
+      }
+    } catch (err) {
+      console.error("chat:send error:", err);
+      if (typeof ack === "function") {
+        ack({ ok: false, message: "Server error" });
+      }
+    }
+  });
+
   socket.on("disconnect", () => {
     console.log("User disconnected:", userId);
   });
 });
-
 
 app.get("/health", (req, res) => {
   res.status(200).send("Server is active and healthy");
@@ -149,6 +197,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/verify", verificationRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/invitations", invitationRoutes);
+app.use("/api/chat", chatRoutes);
 
 app.use((error, _req, res, _next) => {
   if (
@@ -165,30 +214,22 @@ app.use((error, _req, res, _next) => {
 
 const startServer = async () => {
   try {
-    // Step 1: Wait for MongoDB connection
     console.log("Connecting to MongoDB...");
-
     await connectDB();
-
     console.log("MongoDB connected successfully.");
 
-    // Step 2: Start Express + Socket.IO server
     server.listen(PORT, () => {
       console.log(`Server & Socket.io running on port ${PORT}`);
     });
   } catch (error) {
     console.error("Server startup failed:", error.message);
-
-    // Don't start the server if database connection fails
     process.exit(1);
   }
 };
 
-// Handle server errors
 server.on("error", (error) => {
   console.error("HTTP Server Error:", error.message);
   process.exit(1);
 });
 
-// Start application
 startServer();
